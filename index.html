@@ -1,7 +1,7 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
-    <script>
+      <script>
         var password = "1234";
         var user = prompt("Enter password:");
         if (user !== password) {
@@ -12,7 +12,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Samsung Agent KPI Tracker</title>
 <!-- Professional Sans-Serif font -->
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
 <!-- Chart.js for Visuals -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -98,7 +98,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .nav-item .nav-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* main content */
-/* Fix: Page scrolls vertically naturally, hiding horizontal layout bursts */
 #main{overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; background: var(--bg);}
 .view{display:none; padding:24px;}
 
@@ -116,7 +115,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   border-radius:12px;
   overflow:hidden; 
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  /* Fix: Do not allow panel to compress to 0px */
   display:flex;
   flex-direction:column;
   flex-shrink: 0; 
@@ -132,7 +130,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .tbl-wrap {
   overflow:auto;
   width:100%;
-  max-height: 65vh; /* Tables internally scroll after reaching 65% height, keeping headers sticky */
+  max-height: 65vh; 
   border-top: 1px solid var(--border);
 }
 
@@ -172,11 +170,6 @@ td.extra-cell{background:var(--surface2);color:var(--purple)}
 .chip-amber{background:var(--bg-amber);color:var(--text-amber)}
 .chip-blue{background:var(--surface3);color:var(--samsung-blue)}
 .chip-purple{background:var(--surface2);color:var(--purple)}
-
-/* bar mini */
-.mini-bar-wrap{display:flex;align-items:center;gap:8px; justify-content: flex-end;}
-.mini-bar-bg{flex:1;height:6px;background:var(--border);border-radius:3px;min-width:40px; max-width: 60px;}
-.mini-bar-fill{height:100%;border-radius:3px;transition:width .4s ease}
 
 /* filter row */
 .filter-row{display:flex;align-items:center;gap:12px;padding:12px 20px;
@@ -327,6 +320,11 @@ tr.bot3 td{background:var(--bg-red)}
   </div>
   <div class="nav-item" data-view="a13" onclick="switchView(this)">
     <span class="nav-icon">🚀</span><span class="nav-label">A13 · Improvement Leaders</span>
+  </div>
+
+  <div class="sidebar-section" style="margin-top:12px">NPS Intelligence</div>
+  <div class="nav-item" data-view="npsExpress" onclick="switchView(this)">
+    <span class="nav-icon">💡</span><span class="nav-label">Express NPS</span>
   </div>
 
   <div class="sidebar-section" style="margin-top:12px">Data Management</div>
@@ -611,12 +609,26 @@ tr.bot3 td{background:var(--bg-red)}
   </div>
 </div>
 
+<!-- ═══ NPS EXPRESS ═══ -->
+<div class="view" id="view-npsExpress">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">💡 Agent NPS Performance (Express Data)</div>
+      <span class="panel-sub">Upload an Express Report to populate</span>
+    </div>
+    <div class="filter-row">
+      <input type="text" id="npsSearch" placeholder="Search agent..." oninput="renderNpsExpress()"/>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-npsExpress"></table></div>
+  </div>
+</div>
+
 <!-- ═══ ADD DATA / MANAGE ═══ -->
 <div class="view" id="view-addData">
   <div class="panel">
     <div class="panel-header">
       <div class="panel-title">➕ Add New Month Data</div>
-      <span class="panel-sub">Select multiple Excel scorecards or paste CSV/TSV data</span>
+      <span class="panel-sub">Select multiple Excel scorecards, Express Reports, or paste CSV/TSV data</span>
     </div>
     <div class="panel-body" style="padding:24px;display:flex;flex-direction:column;gap:20px">
       <div id="uploadZone" onclick="document.getElementById('fileInput').click()"
@@ -624,7 +636,7 @@ tr.bot3 td{background:var(--bg-red)}
            ondragleave="this.classList.remove('drag')"
            ondrop="handleDrop(event)">
         <div class="uz-icon">📂</div>
-        <h3>Drop Excel scorecard(s) or Distribution sheets here</h3>
+        <h3>Drop Excel scorecard(s), Distribution, or Express Reports here</h3>
         <p>Supports uploading multiple .xlsx files at once!</p>
         <button id="uploadBtn2" class="btn-primary" style="margin-top:8px;">
           Browse Files
@@ -656,6 +668,14 @@ tr.bot3 td{background:var(--bg-red)}
 </div>
 
 </div><!-- end main -->
+
+<!-- NPS Modal Overlay -->
+<div id="npsModalOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center; backdrop-filter:blur(2px);">
+    <div id="npsModalContent" style="background:var(--surface); width:440px; max-width:90%; border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,0.2); overflow:hidden; display:flex; flex-direction:column; border:1px solid var(--border);">
+         <!-- Injected dynamically -->
+    </div>
+</div>
+
 <!-- Hidden file input moved from topbar -->
 <input type="file" id="fileInput" accept=".xlsx,.csv" multiple/>
 </div><!-- end app -->
@@ -670,9 +690,12 @@ tr.bot3 td{background:var(--bg-red)}
 
 // Clean starting point - upload your data to fill the application
 let DATA = [];
+let NPS_DATA = []; // Holds Medallia Express Reports Data
+let SEEN_NPS_TXNS = new Set(); // Prevent duplicates across uploads
 
 // This holds dynamic agent updates from the 'Agents Distribution' sheet
 let GLOBAL_AGENT_MAP = {};
+let currentModalEmpId = null;
 
 const KPI_KEYS   = ['ABS','NPS','Chat_Resolution','First_Response_Avg','EPH','Quality','Errors','Overall_Score'];
 const KPI_LABELS = ['ABS','NPS','Chat Res%','1st Resp','EPH','Quality','Errors','Overall'];
@@ -709,8 +732,10 @@ function toggleTheme() {
         document.getElementById('themeIcon').textContent = '🌙';
         document.getElementById('themeToggleBtn').innerHTML = '<span id="themeIcon">🌙</span> <span style="font-size: 11px;">Dark Mode</span>';
     }
-    // Re-render the overview to update the chart colors properly
+    // Re-render views
     renderOverview();
+    const activeNav = document.querySelector('.nav-item.active');
+    if (activeNav && activeNav.dataset.view === 'npsExpress') renderNpsExpress();
 }
 
 function toggleAgentFilter() {
@@ -839,6 +864,16 @@ function scoreBar(v, kpi){
   </div>`;
 }
 
+function renderNpsMiniBar(p, pa, d, t) {
+    if(!t) return '';
+    const pp = (p/t)*100; const pap = (pa/t)*100; const dp = (d/t)*100;
+    return `<div style="display:flex; height:6px; width:100%; border-radius:3px; overflow:hidden; background:var(--surface3)">
+        <div style="width:${pp}%; background:var(--green)"></div>
+        <div style="width:${pap}%; background:var(--amber)"></div>
+        <div style="width:${dp}%; background:var(--red)"></div>
+    </div>`;
+}
+
 function th(txt,cls=''){return `<th class="${cls}">${txt}</th>`}
 
 function toast(msg){
@@ -862,7 +897,8 @@ function renderView(view){
     overview:renderOverview, agentTrend:renderAgentTrend, byKpi:renderByKpi,
     a1:renderA1, a2:renderA2, a3:renderA3, a4:renderA4, a5:renderA5,
     a6:renderA6, a7:renderA7, a8:renderA8, a9:renderA9, a10:renderA10,
-    a11:renderA11, a12:renderA12, a13:renderA13, addData:renderAddData
+    a11:renderA11, a12:renderA12, a13:renderA13, addData:renderAddData,
+    npsExpress:renderNpsExpress
   };
   fns[view]&&fns[view]();
 }
@@ -1583,6 +1619,188 @@ function renderA13(){
 }
 
 // ══════════════════════════════════════════════════════════
+// NPS EXPRESS VIEW
+// ══════════════════════════════════════════════════════════
+function renderNpsExpress(){
+  const tbl = document.getElementById('tbl-npsExpress');
+  const search = (document.getElementById('npsSearch')||{}).value?.toLowerCase() || '';
+
+  // 1. Group NPS_DATA by agent
+  const agentMap = {};
+  NPS_DATA.forEach(r => {
+      // Respect active filter
+      if (viewActiveOnly && (!GLOBAL_AGENT_MAP[r.empId] || !GLOBAL_AGENT_MAP[r.empId].isActive)) return;
+
+      const key = r.empId || 'unknown';
+      if(!agentMap[key]) {
+          const mappedAg = GLOBAL_AGENT_MAP[key] || Object.values(GLOBAL_AGENT_MAP).find(x => String(x.id) === key) || {};
+          agentMap[key] = {
+              empId: key,
+              name: mappedAg.name || '',
+              lob: mappedAg.position || mappedAg.lob || '',
+              tl: mappedAg.manager || '',
+              rows: []
+          };
+      }
+      agentMap[key].rows.push(r);
+  });
+
+  let ags = Object.values(agentMap).map(a => {
+      const p = a.rows.filter(r => r.npsCategory === 'Promoter').length;
+      const pa = a.rows.filter(r => r.npsCategory === 'Passive').length;
+      const d = a.rows.filter(r => r.npsCategory === 'Detractor').length;
+      const t = a.rows.length;
+      const nps = t ? Math.round(((p - d) / t) * 100) : 0;
+      const avg = t ? (a.rows.reduce((sum, r)=>sum+r.ltr, 0)/t).toFixed(1) : 0;
+      return {...a, p, pa, d, t, nps, avg};
+  });
+
+  if(search) {
+      ags = ags.filter(a => a.name.toLowerCase().includes(search) || a.empId.toLowerCase().includes(search));
+  }
+
+  ags.sort((a,b) => b.t - a.t); // Sort by total surveys desc
+
+  let html = `<thead><tr>
+      ${th('Agent Name','left')}
+      ${th('LOB','center')}
+      ${th('Team Leader','left')}
+      ${th('Surveys','right')}
+      ${th('🟢 Promoters','right')}
+      ${th('🟡 Passives','right')}
+      ${th('🔴 Detractors','right')}
+      ${th('NPS Score','center')}
+      ${th('Avg LTR','right')}
+      ${th('Distribution','center')}
+  </tr></thead><tbody>`;
+
+  if (!ags.length) {
+      html += `<tr><td colspan="10" style="text-align:center; padding:30px; color:var(--muted)">No Express NPS data loaded yet.</td></tr>`;
+  }
+
+  ags.forEach((a, i) => {
+      const npsColor = a.nps >= 50 ? 'var(--text-green)' : (a.nps >= 0 ? 'var(--text-amber)' : 'var(--text-red)');
+      const npsBg = a.nps >= 50 ? 'var(--bg-green)' : (a.nps >= 0 ? 'var(--bg-amber)' : 'var(--bg-red)');
+      html += `<tr>
+          <td class="left">
+             <a href="#" onclick="openNpsModal('${a.empId}'); return false;" style="color:var(--samsung-blue); font-weight:700; text-decoration:underline; text-underline-offset:3px; text-decoration-style: dotted;">
+                 ${escapeHTML(a.name) || `⚠ ID: ${a.empId}`}
+             </a>
+          </td>
+          <td class="center">${a.lob ? `<span class="chip chip-purple">${escapeHTML(a.lob)}</span>` : `<span style="color:var(--muted)">—</span>`}</td>
+          <td class="left" style="color:var(--muted)">${escapeHTML(a.tl) || '—'}</td>
+          <td class="right" style="font-weight:700">${a.t}</td>
+          <td class="right" style="color:var(--green); font-weight:600">${a.p}</td>
+          <td class="right" style="color:var(--amber); font-weight:600">${a.pa}</td>
+          <td class="right" style="color:var(--red); font-weight:600">${a.d}</td>
+          <td class="center">
+              <span style="background:${npsBg}; color:${npsColor}; padding:3px 10px; border-radius:20px; font-weight:800; font-family:'DM Mono', monospace; font-size:11px;">
+                  ${a.nps > 0 ? '+' : ''}${a.nps}
+              </span>
+          </td>
+          <td class="right" style="font-family:'DM Mono', monospace; color:var(--muted); font-size:11px; font-weight:600;">${a.avg}</td>
+          <td class="center" style="min-width:120px;">
+              ${renderNpsMiniBar(a.p, a.pa, a.d, a.t)}
+          </td>
+      </tr>`;
+  });
+  html += `</tbody>`;
+  tbl.innerHTML = html;
+}
+
+// --- NPS Modal UI logic ---
+function openNpsModal(empId) {
+    currentModalEmpId = empId;
+    const rows = NPS_DATA.filter(r => r.empId === empId);
+    if(!rows.length) return;
+    
+    const p = rows.filter(r => r.npsCategory === 'Promoter').length;
+    const pa = rows.filter(r => r.npsCategory === 'Passive').length;
+    const d = rows.filter(r => r.npsCategory === 'Detractor').length;
+    const t = rows.length;
+    const nps = t ? Math.round(((p - d) / t) * 100) : 0;
+    
+    const dsats = rows.filter(r => r.npsCategory === 'Detractor');
+    const passives = rows.filter(r => r.npsCategory === 'Passive');
+
+    const mappedAg = GLOBAL_AGENT_MAP[empId] || Object.values(GLOBAL_AGENT_MAP).find(x => String(x.id) === empId) || {};
+    const name = mappedAg.name || `ID: ${empId}`;
+
+    let html = `
+    <div style="padding:16px 20px; background:var(--surface2); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+        <div>
+            <h3 style="margin:0; font-size:15px; color:var(--text);">${escapeHTML(name)}</h3>
+            <div style="font-size:11px; color:var(--muted); margin-top:2px;">Surveys: ${t} | NPS: ${nps > 0 ? '+' : ''}${nps}</div>
+        </div>
+        <button onclick="document.getElementById('npsModalOverlay').style.display='none'" style="background:none; border:none; font-size:24px; line-height:1; cursor:pointer; color:var(--muted);">&times;</button>
+    </div>
+    <div style="padding:20px; display:flex; flex-direction:column; gap:12px;">
+        <button class="action-btn" style="width:100%; justify-content:center; background:var(--bg-red); color:var(--text-red); border:1px solid var(--red); box-shadow:none;" onclick="copyNpsCurrent('Detractor', '${escapeHTML(name)}')">
+            📋 Copy DSATs (${dsats.length})
+        </button>
+        <button class="action-btn" style="width:100%; justify-content:center; background:var(--bg-amber); color:var(--text-amber); border:1px solid var(--amber); box-shadow:none;" onclick="copyNpsCurrent('Passive', '${escapeHTML(name)}')">
+            📋 Copy Passives (${passives.length})
+        </button>
+        <div style="max-height:300px; overflow-y:auto; margin-top:10px; border-top:1px solid var(--border); padding-top:16px;">
+            <h4 style="font-size:11px; text-transform:uppercase; color:var(--muted); margin-bottom:12px; letter-spacing:0.05em;">Recent DSATs</h4>
+            ${dsats.slice(0,10).map(r => `
+                <div style="font-size:11px; padding:10px; background:var(--surface3); border-radius:8px; margin-bottom:8px; border:1px solid var(--border);">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                       <span style="font-weight:700; color:var(--red);">Score: ${r.ltr}</span>
+                       <span style="color:var(--muted);">${r.dayLabel}</span>
+                    </div>
+                    <div style="color:var(--text); font-family:'DM Mono', monospace; font-size:10px;">TXN: ${r.txnId}</div>
+                    ${r.reasonScore ? `<div style="color:var(--muted); font-style:italic; margin-top:6px; background:var(--surface2); padding:6px; border-radius:4px;">"${escapeHTML(r.reasonScore)}"</div>` : ''}
+                </div>
+            `).join('')}
+            ${dsats.length > 10 ? `<div style="font-size:11px; color:var(--muted); text-align:center; padding-top:4px;">+${dsats.length - 10} more (copy to view all)</div>` : ''}
+            ${dsats.length === 0 ? '<div style="font-size:11px; color:var(--muted); text-align:center;">No DSATs! 🎉</div>' : ''}
+        </div>
+    </div>
+    `;
+    
+    document.getElementById('npsModalContent').innerHTML = html;
+    document.getElementById('npsModalOverlay').style.display = 'flex';
+}
+
+function copyNpsCurrent(type, agentName) {
+    const rows = NPS_DATA.filter(r => r.empId === currentModalEmpId && r.npsCategory === type);
+    if(!rows || !rows.length) {
+        toast(`❌ No ${type}s to copy!`);
+        return;
+    }
+    let txt = `Agent: ${agentName} | ${type}s (${rows.length})\n--------------------------------------------------\n`;
+    rows.forEach((r, i) => {
+        txt += `${i+1}. TXN: ${r.txnId} | Score: ${r.ltr} | Date: ${r.dayLabel}\n`;
+        if(r.reasonScore) txt += `   Reason: ${r.reasonScore}\n`;
+    });
+    
+    navigator.clipboard.writeText(txt).then(() => {
+        toast(`✅ Copied ${rows.length} ${type}s to clipboard!`);
+    }).catch(err => {
+        // fallback
+        const ta = document.createElement("textarea");
+        ta.value = txt;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        toast(`✅ Copied ${rows.length} ${type}s to clipboard!`);
+    });
+}
+
+function clearNpsData() {
+    if (confirm("Are you sure you want to wipe all loaded Express NPS data?")) {
+        NPS_DATA = [];
+        SEEN_NPS_TXNS.clear();
+        toast("✅ Express NPS Memory Cleared");
+        renderAddData();
+        const activeNav = document.querySelector('.nav-item.active');
+        if (activeNav && activeNav.dataset.view === 'npsExpress') renderNpsExpress();
+    }
+}
+
+// ══════════════════════════════════════════════════════════
 // ADD DATA / MANAGE VIEW
 // ══════════════════════════════════════════════════════════
 function deleteMonth(m) {
@@ -1600,7 +1818,7 @@ function renderAddData(){
   const ms = [...order.filter(m=>present.has(m)), ...[...present].filter(m=>!order.includes(m)).sort((a, b) => new Date(a.replace('-', ' 1, 20')) - new Date(b.replace('-', ' 1, 20')))];
   
   const tbl=document.getElementById('tbl-dataSummary');
-  let html=`<thead><tr>${th('Month','left')}${th('# Agents', 'center')}${th('# Records', 'center')}${th('Action', 'center')}</tr></thead><tbody>`;
+  let html=`<thead><tr>${th('Month/Module','left')}${th('# Agents', 'center')}${th('# Records', 'center')}${th('Action', 'center')}</tr></thead><tbody>`;
   ms.forEach(m=>{
     const recs=getWorkingData().filter(r=>r.Month===m);
     const uniqueAgents=new Set(recs.map(r=>r.Agent_ID)).size;
@@ -1608,11 +1826,22 @@ function renderAddData(){
       <td class="left"><span class="chip chip-blue">${m}</span></td>
       <td class="center">${uniqueAgents}</td>
       <td class="center">${recs.length}</td>
-      <td class="center"><button class="btn-danger" onclick="deleteMonth('${m}')">Delete Month</button></td>
+      <td class="center"><button class="btn-danger" onclick="deleteMonth('${m}')">Delete</button></td>
     </tr>`;
   });
+  
+  // Also show NPS Data usage
+  if(NPS_DATA.length > 0) {
+      html+=`<tr>
+        <td class="left"><span class="chip chip-amber">💡 Express NPS</span></td>
+        <td class="center">${new Set(NPS_DATA.map(r=>r.empId)).size}</td>
+        <td class="center">${NPS_DATA.length} surveys</td>
+        <td class="center"><button class="btn-danger" onclick="clearNpsData()">Clear</button></td>
+      </tr>`;
+  }
+  
   html+=`<tr style="font-weight:800; background: var(--surface2)">
-    <td class="left">TOTAL MEMORY</td>
+    <td class="left">TOTAL CORE MEMORY</td>
     <td class="center">${new Set(getWorkingData().map(r=>r.Agent_ID)).size}</td>
     <td class="center">${getWorkingData().length}</td>
     <td class="center">—</td>
@@ -1638,15 +1867,19 @@ document.getElementById('fileInput').addEventListener('change',function(){
 async function processMultipleFiles(files) {
     let totalAdded = 0;
     let totalUpdated = 0;
+    let totalNps = 0;
     
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const result = await processSingleFile(file);
         totalAdded += result.added;
         totalUpdated += result.updated;
+        totalNps += result.npsAdded;
     }
     
-    if (totalAdded > 0 && totalUpdated > 0) {
+    if (totalNps > 0) {
+        toast(`✅ Loaded ${totalNps} new Express NPS surveys!`);
+    } else if (totalAdded > 0 && totalUpdated > 0) {
         toast(`✅ Added ${totalAdded} records & updated ${totalUpdated} agent profiles!`);
     } else if (totalAdded > 0) {
         toast(`✅ Processed ${totalAdded} new records!`);
@@ -1658,7 +1891,10 @@ async function processMultipleFiles(files) {
     
     document.getElementById('fileInput').value = '';
     renderAddData();
-    renderView('overview');
+    
+    const activeNav = document.querySelector('.nav-item.active');
+    if (activeNav && activeNav.dataset.view === 'npsExpress') renderNpsExpress();
+    else renderOverview();
 }
 
 function processSingleFile(file){
@@ -1670,13 +1906,14 @@ function processSingleFile(file){
       
       let added = 0;
       let updated = 0;
+      let npsAdded = 0;
 
       // Loop through all sheets
       for (let s = 0; s < wb.SheetNames.length; s++) {
           const sName = wb.SheetNames[s].toLowerCase();
           
-          // In multi-sheet files, explicitly ignore secondary tracking sheets to avoid overwriting clean Agent mapping with garbage defaults
-          if (wb.SheetNames.length > 1 && (sName.includes('attendance') || sName.includes('msv') || sName.includes('gdpr') || sName.includes('schedule') || sName.includes('pulse') || sName.includes('attrition') || sName.includes('dashboard') || sName.includes('overhead'))) {
+          // Ignore secondary tracking sheets (unless they actually contain the exact Express headers, handled below)
+          if (wb.SheetNames.length > 1 && !sName.includes('express') && !sName.includes('nps') && (sName.includes('attendance') || sName.includes('msv') || sName.includes('gdpr') || sName.includes('schedule') || sName.includes('pulse') || sName.includes('attrition') || sName.includes('dashboard') || sName.includes('overhead'))) {
               continue;
           }
 
@@ -1688,8 +1925,8 @@ function processSingleFile(file){
           let headers = [];
           for(let i=0; i<Math.min(15, json.length); i++){
             const row = json[i].map(c => String(c||'').trim().toLowerCase());
-            // More strict identification
-            if(row.includes('agent id') || row.includes('agent_id') || row.includes('transcom id') || row.includes('bp number')){
+            // Added check for "Likelihood to recommend" or "Survey Type" to catch Express reports
+            if(row.includes('agent id') || row.includes('agent_id') || row.includes('transcom id') || row.includes('bp number') || row.some(h => h.includes('likelihood to recommend')) || row.some(h => h.includes('survey type'))){
               hdrRow = i; 
               headers = row; 
               break;
@@ -1698,11 +1935,72 @@ function processSingleFile(file){
           if(hdrRow === -1) continue;
 
           // Detect Sheet Type
-          const isDist = (headers.includes('1st line manager') || headers.includes('manager')) && (headers.includes('transcom id') || headers.includes('agent id') || headers.includes('agent_id') || headers.includes('bp number'));
-          const isScorecard = headers.some(h => h.includes('overall') || h.includes('nps') || h.includes('quality') || h.includes('abs'));
+          const isExpressReport = headers.some(h => h.includes('likelihood to recommend') || h.includes('survey type'));
+          const isDist = !isExpressReport && (headers.includes('1st line manager') || headers.includes('manager')) && (headers.includes('transcom id') || headers.includes('agent id') || headers.includes('agent_id') || headers.includes('bp number'));
+          const isScorecard = !isExpressReport && !isDist && headers.some(h => h.includes('overall') || h.includes('nps') || h.includes('quality') || h.includes('abs'));
 
-          // 1. Process "Agents Distribution" sheet
-          if (isDist) {
+          // 1. Process Medallia Express Report
+          if (isExpressReport) {
+              const idxSurveyType = headers.findIndex(h => h.includes('survey type'));
+              const idxLTR = headers.findIndex(h => h.includes('likelihood to recommend'));
+              const idxDate = headers.findIndex(h => h.includes('response date'));
+              const idxCountry = headers.findIndex(h => h.includes('country') || h.includes('location'));
+              const idxTxnId = headers.findIndex(h => h.includes('transaction id'));
+              const idxEmpId = headers.findIndex(h => h.includes('employee id') || h.includes('agent id'));
+              const idxReasonScore = headers.findIndex(h => h.includes('reason for score'));
+
+              for(let i=hdrRow+1; i<json.length; i++){
+                  const row = json[i];
+                  if(!row) continue;
+                  
+                  const surveyType = idxSurveyType >= 0 ? String(row[idxSurveyType]||'').trim() : '';
+                  if(idxSurveyType >= 0 && surveyType !== 'Chat') continue; // Optional filter from your snippet
+
+                  const txnId = idxTxnId >= 0 ? String(row[idxTxnId]||'').trim() : '';
+                  if(!txnId || SEEN_NPS_TXNS.has(txnId)) continue;
+                  SEEN_NPS_TXNS.add(txnId);
+
+                  const ltrRaw = idxLTR >= 0 ? row[idxLTR] : null;
+                  if(ltrRaw == null || ltrRaw === '') continue;
+                  const ltr = Number(ltrRaw);
+
+                  let empId = idxEmpId >= 0 ? String(row[idxEmpId]||'').trim().replace(/\.0$/, "") : '';
+
+                  let npsCategory = "Detractor";
+                  if (ltr >= 9) npsCategory = "Promoter";
+                  else if (ltr >= 7) npsCategory = "Passive";
+
+                  let dateRaw = idxDate >= 0 ? row[idxDate] : null;
+                  let dayLabel = "Unknown";
+                  let monthKey = "Unknown";
+                  if (typeof dateRaw === "number") {
+                      const d = new Date(Math.round((dateRaw - 25569)*86400*1000));
+                      dayLabel = d.toLocaleDateString('en-GB');
+                      monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+                  } else if (dateRaw) {
+                      const d = new Date(dateRaw);
+                      if (!isNaN(d)) {
+                          dayLabel = d.toLocaleDateString('en-GB');
+                          monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+                      } else dayLabel = String(dateRaw);
+                  }
+
+                  NPS_DATA.push({
+                      txnId,
+                      ltr,
+                      npsCategory,
+                      dayLabel,
+                      monthKey,
+                      country: idxCountry >= 0 ? String(row[idxCountry] || "").trim() || "Unknown" : "Unknown",
+                      empId,
+                      reasonScore: idxReasonScore >= 0 ? String(row[idxReasonScore]||'').trim() : ''
+                  });
+                  npsAdded++;
+              }
+          }
+
+          // 2. Process "Agents Distribution" sheet
+          else if (isDist) {
               const idIdx = headers.indexOf('transcom id') >= 0 ? headers.indexOf('transcom id') : headers.findIndex(h=>h.includes('agent id')||h.includes('agent_id')||h==='bp number');
               const nameIdx = headers.indexOf('name') >= 0 ? headers.indexOf('name') : headers.indexOf('agent name');
               const mgrIdx = headers.indexOf('1st line manager') >= 0 ? headers.indexOf('1st line manager') : headers.indexOf('manager');
@@ -1735,7 +2033,6 @@ function processSingleFile(file){
                           if (aMgr && aMgr !== '-') GLOBAL_AGENT_MAP[aId].manager = aMgr;
                           if (aPos && aPos !== '-') GLOBAL_AGENT_MAP[aId].position = aPos;
                           
-                          // If a status column exists, trust it. Otherwise, default to Active if entirely new.
                           if (statusIdx >= 0) {
                               GLOBAL_AGENT_MAP[aId].isActive = isActive;
                           } else if (GLOBAL_AGENT_MAP[aId].isActive === undefined) {
@@ -1758,8 +2055,8 @@ function processSingleFile(file){
               }
           }
 
-          // 2. Process Standard "Scorecard"
-          if (isScorecard) {
+          // 3. Process Standard "Scorecard"
+          else if (isScorecard || (!isDist && !isExpressReport)) {
               const colMap={};
               const fieldAliases={
                 Agent_ID:['agent_id','agent id','transcom id'],
@@ -1829,7 +2126,7 @@ function processSingleFile(file){
               }
           }
       }
-      resolve({added, updated});
+      resolve({added, updated, npsAdded});
     };
     reader.readAsArrayBuffer(file);
   });
@@ -1844,13 +2141,61 @@ function importPaste(){
   const sep=lines[0].includes('\t')?'\t':',';
   const headers=lines[0].split(sep).map(h=>h.trim().replace(/^"|"$/g,'').toLowerCase());
   
-  const isDist = headers.includes('1st line manager') || headers.includes('transcom id') || headers.includes('status');
-  const isScorecard = headers.some(h => h.includes('overall') || h.includes('nps') || h.includes('quality') || h.includes('abs'));
+  const isExpressReport = headers.some(h => h.includes('likelihood to recommend') || h.includes('survey type'));
+  const isDist = !isExpressReport && (headers.includes('1st line manager') || headers.includes('transcom id') || headers.includes('status'));
 
   let added = 0;
   let updated = 0;
+  let npsAdded = 0;
 
-  if (isDist) {
+  if (isExpressReport) {
+      const idxSurveyType = headers.findIndex(h => h.includes('survey type'));
+      const idxLTR = headers.findIndex(h => h.includes('likelihood to recommend'));
+      const idxDate = headers.findIndex(h => h.includes('response date'));
+      const idxCountry = headers.findIndex(h => h.includes('country') || h.includes('location'));
+      const idxTxnId = headers.findIndex(h => h.includes('transaction id'));
+      const idxEmpId = headers.findIndex(h => h.includes('employee id') || h.includes('agent id'));
+      const idxReasonScore = headers.findIndex(h => h.includes('reason for score'));
+
+      for(let i=1; i<lines.length; i++){
+          const cols = lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,''));
+          
+          const surveyType = idxSurveyType >= 0 ? cols[idxSurveyType] : '';
+          if(idxSurveyType >= 0 && surveyType !== 'Chat') continue;
+
+          const txnId = idxTxnId >= 0 ? cols[idxTxnId] : '';
+          if(!txnId || SEEN_NPS_TXNS.has(txnId)) continue;
+          SEEN_NPS_TXNS.add(txnId);
+
+          const ltrRaw = idxLTR >= 0 ? cols[idxLTR] : null;
+          if(!ltrRaw) continue;
+          const ltr = Number(ltrRaw);
+
+          let empId = idxEmpId >= 0 ? cols[idxEmpId].replace(/\.0$/, "") : '';
+
+          let npsCategory = "Detractor";
+          if (ltr >= 9) npsCategory = "Promoter";
+          else if (ltr >= 7) npsCategory = "Passive";
+
+          let dateRaw = idxDate >= 0 ? cols[idxDate] : null;
+          let dayLabel = "Unknown";
+          if (dateRaw) {
+              const d = new Date(dateRaw);
+              if (!isNaN(d)) dayLabel = d.toLocaleDateString('en-GB');
+              else dayLabel = dateRaw;
+          }
+
+          NPS_DATA.push({
+              txnId,
+              ltr,
+              npsCategory,
+              dayLabel,
+              empId,
+              reasonScore: idxReasonScore >= 0 ? cols[idxReasonScore] : ''
+          });
+          npsAdded++;
+      }
+  } else if (isDist) {
       const idIdx = headers.indexOf('transcom id') >= 0 ? headers.indexOf('transcom id') : headers.findIndex(h=>h.includes('agent id')||h.includes('agent_id')||h==='bp number');
       const nameIdx = headers.indexOf('name') >= 0 ? headers.indexOf('name') : headers.indexOf('agent name');
       const mgrIdx = headers.indexOf('1st line manager') >= 0 ? headers.indexOf('1st line manager') : headers.indexOf('manager');
@@ -1893,9 +2238,7 @@ function importPaste(){
               updated++;
           }
       }
-  }
-  
-  if (isScorecard || !isDist) {
+  } else {
       const idx={};
       ['agent_id','agent_name','manager','position','stage','abs','nps','chat_resolution',
        'first_response_avg','eph','quality','errors','overall_score'].forEach(k=>{
@@ -1932,7 +2275,9 @@ function importPaste(){
       }
   }
 
-  if (added > 0 && updated > 0) {
+  if (npsAdded > 0) {
+      toast(`✅ Pasted ${npsAdded} Express NPS records!`);
+  } else if (added > 0 && updated > 0) {
       toast(`✅ Pasted ${added} records & updated ${updated} agent profiles!`);
   } else if (added > 0) {
       toast(`✅ Pasted ${added} new records!`);
@@ -1944,7 +2289,9 @@ function importPaste(){
   
   document.getElementById('pasteArea').value='';
   renderAddData();
-  renderView('overview');
+  const activeNav = document.querySelector('.nav-item.active');
+  if (activeNav && activeNav.dataset.view === 'npsExpress') renderNpsExpress();
+  else renderOverview();
 }
 
 function toNum(v){
