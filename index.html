@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Private Page</title>
     <script>
         var password = "1234";
         var user = prompt("Enter password:");
@@ -99,6 +98,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .nav-item .nav-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* main content */
+/* Fix: Page scrolls vertically naturally, hiding horizontal layout bursts */
 #main{overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; background: var(--bg);}
 .view{display:none; padding:24px;}
 
@@ -106,7 +106,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   display:flex; 
   flex-direction:column; 
   gap:24px;
-  flex: 1 0 auto; /* 🔥 Let view expand naturally so #main scrolls */
+  flex: 1 0 auto;
 }
 
 /* cards / panels */
@@ -116,10 +116,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
   border-radius:12px;
   overflow:hidden; 
   box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-
+  /* Fix: Do not allow panel to compress to 0px */
   display:flex;
   flex-direction:column;
-  flex-shrink: 0; /* 🔥 PREVENTS SQUISHING - Panel holds its shape! */
+  flex-shrink: 0; 
 }
 .panel-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;
   align-items:center;gap:10px;justify-content:space-between; background: var(--surface2);}
@@ -132,7 +132,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .tbl-wrap {
   overflow:auto;
   width:100%;
-  max-height: 60vh; /* 🔥 Ensures sticky headers work while scrolling giant tables */
+  max-height: 65vh; /* Tables internally scroll after reaching 65% height, keeping headers sticky */
   border-top: 1px solid var(--border);
 }
 
@@ -262,6 +262,12 @@ tr.bot3 td{background:var(--bg-red)}
   <div id="topbar-right">
     <span class="pill" id="monthPill"></span>
     
+    <!-- AGENT FILTER TOGGLE -->
+    <select id="globalAgentFilter" onchange="toggleAgentFilter()" style="background:var(--surface2); color:var(--text); border:1px solid var(--border); padding: 6px 12px; border-radius: 8px; font-size: 11px; font-family:var(--font-main); font-weight:600; cursor:pointer; outline:none;">
+      <option value="all">All Agents</option>
+      <option value="active">Active Dist. Only</option>
+    </select>
+
     <!-- DARK MODE TOGGLE BUTTON -->
     <button class="action-btn" id="themeToggleBtn" onclick="toggleTheme()" style="background:var(--surface2); color:var(--text); border:1px solid var(--border);">
       <span id="themeIcon">🌙</span> <span style="font-size: 11px;">Dark Mode</span>
@@ -618,7 +624,7 @@ tr.bot3 td{background:var(--bg-red)}
            ondragleave="this.classList.remove('drag')"
            ondrop="handleDrop(event)">
         <div class="uz-icon">📂</div>
-        <h3>Drop Excel scorecard(s) here</h3>
+        <h3>Drop Excel scorecard(s) or Distribution sheets here</h3>
         <p>Supports uploading multiple .xlsx files at once!</p>
         <button id="uploadBtn2" class="btn-primary" style="margin-top:8px;">
           Browse Files
@@ -665,6 +671,9 @@ tr.bot3 td{background:var(--bg-red)}
 // Clean starting point - upload your data to fill the application
 let DATA = [];
 
+// This holds dynamic agent updates from the 'Agents Distribution' sheet
+let GLOBAL_AGENT_MAP = {};
+
 const KPI_KEYS   = ['ABS','NPS','Chat_Resolution','First_Response_Avg','EPH','Quality','Errors','Overall_Score'];
 const KPI_LABELS = ['ABS','NPS','Chat Res%','1st Resp','EPH','Quality','Errors','Overall'];
 const KPI_LOWER  = new Set(['ABS','First_Response_Avg','Errors']);
@@ -676,6 +685,7 @@ let chartInstance = null;
 let barChartInstance = null;
 let doughnutChartInstance = null;
 let isDarkMode = false;
+let viewActiveOnly = false; // Tracks the state of the active filter
 
 Chart.defaults.font.family = "'Inter', sans-serif";
 
@@ -703,6 +713,33 @@ function toggleTheme() {
     renderOverview();
 }
 
+function toggleAgentFilter() {
+    const val = document.getElementById('globalAgentFilter').value;
+    if (val === 'active' && Object.keys(GLOBAL_AGENT_MAP).length === 0) {
+        toast("⚠️ Please upload an 'Agents Distribution' sheet first!");
+        document.getElementById('globalAgentFilter').value = 'all';
+        return;
+    }
+    viewActiveOnly = (val === 'active');
+    
+    initKpiTabs();
+    renderOverview();
+    
+    const activeNav = document.querySelector('.nav-item.active');
+    if (activeNav && activeNav.dataset.view !== 'overview') {
+        renderView(activeNav.dataset.view);
+    }
+}
+
+// Master Data Filter - Feeds filtered data to the entire dashboard seamlessly
+function getWorkingData() {
+    if (!viewActiveOnly) return DATA;
+    return DATA.filter(r => {
+        const ag = GLOBAL_AGENT_MAP[r.Agent_ID] || GLOBAL_AGENT_MAP[String(r.Agent_ID)] || GLOBAL_AGENT_MAP[parseInt(r.Agent_ID)];
+        return ag && ag.isActive;
+    });
+}
+
 function escapeHTML(str) {
   if (str == null) return '—';
   return String(str)
@@ -714,7 +751,15 @@ function escapeHTML(str) {
 }
 
 function upsertRecord(newRec) {
-  const existingIdx = DATA.findIndex(r => r.Agent_ID === newRec.Agent_ID && r.Month === newRec.Month);
+  // Overwrite with dynamically synced distribution list data if it exists
+  const mappedAg = GLOBAL_AGENT_MAP[newRec.Agent_ID] || GLOBAL_AGENT_MAP[String(newRec.Agent_ID)] || GLOBAL_AGENT_MAP[parseInt(newRec.Agent_ID)];
+  if (mappedAg) {
+      if (mappedAg.manager) newRec.Manager = mappedAg.manager;
+      if (mappedAg.position) newRec.Position = mappedAg.position;
+      if (mappedAg.name) newRec.Agent_Name = mappedAg.name;
+  }
+
+  const existingIdx = DATA.findIndex(r => String(r.Agent_ID) === String(newRec.Agent_ID) && r.Month === newRec.Month);
   if (existingIdx >= 0) {
     DATA[existingIdx] = { ...DATA[existingIdx], ...newRec };
   } else {
@@ -725,7 +770,7 @@ function upsertRecord(newRec) {
 function months(){
   const order=['Nov-25','Dec-25','Jan-26','Feb-26','Mar-26','Apr-26','May-26','Jun-26',
                 'Jul-26','Aug-26','Sep-26','Oct-26','Nov-26','Dec-26'];
-  const present=new Set(DATA.map(r=>r.Month));
+  const present=new Set(getWorkingData().map(r=>r.Month));
   const known=order.filter(m=>present.has(m));
   
   const extra=[...present].filter(m=>!order.includes(m)).sort((a, b) => {
@@ -739,21 +784,21 @@ function months(){
 
 function agents(){
   const m={};
-  DATA.forEach(r=>{
+  getWorkingData().forEach(r=>{
     if(!m[r.Agent_ID]) m[r.Agent_ID]={id:r.Agent_ID,name:r.Agent_Name,manager:r.Manager,position:r.Position,stage:r.Stage};
   });
   return Object.values(m).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
 }
 
 function agentVal(agentId, month, kpi){
-  const rows=DATA.filter(r=>r.Agent_ID===agentId && r.Month===month);
+  const rows=getWorkingData().filter(r=>String(r.Agent_ID)===String(agentId) && r.Month===month);
   if(!rows.length) return null;
   const vals=rows.map(r=>r[kpi]).filter(v=>v!=null);
   return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
 }
 
 function teamAvg(month, kpi){
-  const vals=DATA.filter(r=>r.Month===month).map(r=>r[kpi]).filter(v=>v!=null);
+  const vals=getWorkingData().filter(r=>r.Month===month).map(r=>r[kpi]).filter(v=>v!=null);
   return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
 }
 
@@ -835,14 +880,14 @@ function renderOverview(){
   const delta=lastOverall&&prevOverall?lastOverall-prevOverall:null;
 
   document.getElementById('overviewStats').innerHTML=`
-    <div class="stat-card blue"><div class="sc-label">Total Agents</div><div class="sc-value">${ags.length}</div><div class="sc-sub">across all months</div></div>
+    <div class="stat-card blue"><div class="sc-label">Total Agents</div><div class="sc-value">${ags.length}</div><div class="sc-sub">across active records</div></div>
     <div class="stat-card"><div class="sc-label">Months Tracked</div><div class="sc-value">${ms.length}</div><div class="sc-sub">${ms[0] || '—'} → ${lastM}</div></div>
     <div class="stat-card ${delta>0?'green':delta<0?'red':''}">
       <div class="sc-label">Team Overall Score (${lastM})</div>
       <div class="sc-value">${lastOverall?(lastOverall*100).toFixed(1)+'%':'—'}</div>
       <div class="sc-sub">${delta!=null?(delta>0?'▲ +':'▼ ')+(Math.abs(delta)*100).toFixed(1)+'% vs '+prevM:'First month'}</div>
     </div>
-    <div class="stat-card amber"><div class="sc-label">Total Records</div><div class="sc-value">${DATA.length}</div><div class="sc-sub">raw data rows</div></div>
+    <div class="stat-card amber"><div class="sc-label">Total Records</div><div class="sc-value">${getWorkingData().length}</div><div class="sc-sub">rendered rows</div></div>
   `;
   
   const themeColors = getChartColors();
@@ -852,7 +897,7 @@ function renderOverview(){
   if (ctx) {
       if (chartInstance) {
           chartInstance.destroy();
-          chartInstance = null;
+          chartInstance = null; // 🔥 MEMORY LEAK FIX
       }
       const chartData = ms.map(m => {
           const val = avg(m, 'Overall_Score');
@@ -896,9 +941,9 @@ function renderOverview(){
           barChartInstance = null; 
       }
       
-      const mgrs = [...new Set(DATA.map(r=>r.Manager).filter(Boolean))];
+      const mgrs = [...new Set(getWorkingData().map(r=>r.Manager).filter(Boolean))];
       const mgrData = mgrs.map(mgr => {
-          const vs = DATA.filter(r=>r.Month===lastM && r.Manager===mgr && r.Overall_Score!=null).map(r=>r.Overall_Score);
+          const vs = getWorkingData().filter(r=>r.Month===lastM && r.Manager===mgr && r.Overall_Score!=null).map(r=>r.Overall_Score);
           return {
               mgr: mgr,
               score: vs.length ? (vs.reduce((a,b)=>a+b,0)/vs.length)*100 : null
@@ -937,7 +982,7 @@ function renderOverview(){
       
       const posCounts = {};
       const latestAgents = new Set();
-      DATA.filter(r=>r.Month===lastM).forEach(r => {
+      getWorkingData().filter(r=>r.Month===lastM).forEach(r => {
           if (!latestAgents.has(r.Agent_ID)) {
              posCounts[r.Position || 'Unknown'] = (posCounts[r.Position || 'Unknown'] || 0) + 1;
              latestAgents.add(r.Agent_ID);
@@ -990,7 +1035,7 @@ function renderOverview(){
   html+='</tbody>';
   tbl.innerHTML=html;
   document.getElementById('monthPill').textContent=`Latest: ${lastM}`;
-  document.getElementById('dataInfo').textContent=`${DATA.length} records · ${ms.length} months · ${ags.length} agents`;
+  document.getElementById('dataInfo').textContent=`${getWorkingData().length} records · ${ms.length} months · ${ags.length} agents`;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1004,8 +1049,8 @@ function renderAgentTrend(){
   const currentMgr = document.getElementById('filterManager').value;
   const currentPos = document.getElementById('filterPosition').value;
 
-  const allMgrs=[...new Set(DATA.map(r=>r.Manager).filter(Boolean))].sort();
-  const allPos=[...new Set(DATA.map(r=>r.Position).filter(Boolean))].sort();
+  const allMgrs=[...new Set(getWorkingData().map(r=>r.Manager).filter(Boolean))].sort();
+  const allPos=[...new Set(getWorkingData().map(r=>r.Position).filter(Boolean))].sort();
   
   const mgrSel=document.getElementById('filterManager');
   mgrSel.innerHTML = '<option value="">All</option>'; 
@@ -1193,7 +1238,7 @@ function renderA3(){
     if(tgt==null) return;
     html+=`<tr><td class="left" style="font-weight:600">${KPI_LABELS[i]}</td><td class="right" style="color:var(--muted);">${fmt(tgt,kpi)}</td>`;
     ms.forEach(m=>{
-      const rows=DATA.filter(r=>r.Month===m);
+      const rows=getWorkingData().filter(r=>r.Month===m);
       const total=rows.length;
       if(!total){html+=`<td class="month-cell center">—</td>`;return;}
       const hit=rows.filter(r=>{const v=r[kpi];if(v==null)return false;return KPI_LOWER.has(kpi)?v<=tgt:v>=tgt;}).length;
@@ -1215,13 +1260,13 @@ function renderA3(){
 // ══════════════════════════════════════════════════════════
 function renderA4(){
   const ms=months();
-  const mgrs=[...new Set(DATA.map(r=>r.Manager).filter(Boolean))].sort();
+  const mgrs=[...new Set(getWorkingData().map(r=>r.Manager).filter(Boolean))].sort();
   const tbl=document.getElementById('tbl-a4');
   let html=`<thead><tr>${th('Manager','left')}${th('# Agents', 'center')}${ms.map(m=>th(m,'month-hdr right')).join('')}${th('Trend','extra-hdr center')}</tr></thead><tbody>`;
   mgrs.forEach(mgr=>{
-    const mgrAgents=[...new Set(DATA.filter(r=>r.Manager===mgr).map(r=>r.Agent_ID))];
+    const mgrAgents=[...new Set(getWorkingData().filter(r=>r.Manager===mgr).map(r=>r.Agent_ID))];
     const vals=ms.map(m=>{
-      const vs=DATA.filter(r=>r.Month===m&&r.Manager===mgr).map(r=>r.Overall_Score).filter(v=>v!=null);
+      const vs=getWorkingData().filter(r=>r.Month===m&&r.Manager===mgr).map(r=>r.Overall_Score).filter(v=>v!=null);
       return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null;
     });
     const last=vals[vals.length-1];const prev=vals.slice(0,-1).reverse().find(v=>v!=null);
@@ -1272,13 +1317,13 @@ function renderA5(){
 // ══════════════════════════════════════════════════════════
 function renderA6(){
   const ms=months();
-  const positions=[...new Set(DATA.map(r=>r.Position).filter(Boolean))].sort();
+  const positions=[...new Set(getWorkingData().map(r=>r.Position).filter(Boolean))].sort();
   const tbl=document.getElementById('tbl-a6');
   let html=`<thead><tr>${th('Position','left')}${th('# Agents', 'center')}${ms.map(m=>th(m,'month-hdr right')).join('')}${th('Trend','extra-hdr center')}</tr></thead><tbody>`;
   positions.forEach(pos=>{
-    const posAgents=[...new Set(DATA.filter(r=>r.Position===pos).map(r=>r.Agent_ID))];
+    const posAgents=[...new Set(getWorkingData().filter(r=>r.Position===pos).map(r=>r.Agent_ID))];
     const vals=ms.map(m=>{
-      const vs=DATA.filter(r=>r.Month===m&&r.Position===pos).map(r=>r.Overall_Score).filter(v=>v!=null);
+      const vs=getWorkingData().filter(r=>r.Month===m&&r.Position===pos).map(r=>r.Overall_Score).filter(v=>v!=null);
       return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null;
     });
     const last=vals[vals.length-1];const prev=vals.slice(0,-1).reverse().find(v=>v!=null);
@@ -1299,7 +1344,7 @@ function renderA7(){
   const container=document.getElementById('a7container');
   container.innerHTML='';
   ms.forEach(m=>{
-    const monthRows=DATA.filter(r=>r.Month===m&&r.Overall_Score!=null);
+    const monthRows=getWorkingData().filter(r=>r.Month===m&&r.Overall_Score!=null);
     monthRows.sort((a,b)=>b.Overall_Score-a.Overall_Score);
     const top=monthRows.slice(0,10);
     const col=document.createElement('div');
@@ -1399,7 +1444,7 @@ function renderA10(){
   
   const monthScores={};
   ms.forEach(m=>{
-    monthScores[m]=DATA.filter(r=>r.Month===m&&r[kpi]!=null).map(r=>r[kpi]).sort((a,b)=>a-b);
+    monthScores[m]=getWorkingData().filter(r=>r.Month===m&&r[kpi]!=null).map(r=>r[kpi]).sort((a,b)=>a-b);
   });
   function percentile(v, arr){
     if(!arr.length||v==null) return null;
@@ -1550,11 +1595,14 @@ function deleteMonth(m) {
 }
 
 function renderAddData(){
-  const ms=months();
+  const present=new Set(getWorkingData().map(r=>r.Month));
+  const order=['Nov-25','Dec-25','Jan-26','Feb-26','Mar-26','Apr-26','May-26','Jun-26','Jul-26','Aug-26','Sep-26','Oct-26','Nov-26','Dec-26'];
+  const ms = [...order.filter(m=>present.has(m)), ...[...present].filter(m=>!order.includes(m)).sort((a, b) => new Date(a.replace('-', ' 1, 20')) - new Date(b.replace('-', ' 1, 20')))];
+  
   const tbl=document.getElementById('tbl-dataSummary');
   let html=`<thead><tr>${th('Month','left')}${th('# Agents', 'center')}${th('# Records', 'center')}${th('Action', 'center')}</tr></thead><tbody>`;
   ms.forEach(m=>{
-    const recs=DATA.filter(r=>r.Month===m);
+    const recs=getWorkingData().filter(r=>r.Month===m);
     const uniqueAgents=new Set(recs.map(r=>r.Agent_ID)).size;
     html+=`<tr>
       <td class="left"><span class="chip chip-blue">${m}</span></td>
@@ -1565,8 +1613,8 @@ function renderAddData(){
   });
   html+=`<tr style="font-weight:800; background: var(--surface2)">
     <td class="left">TOTAL MEMORY</td>
-    <td class="center">${new Set(DATA.map(r=>r.Agent_ID)).size}</td>
-    <td class="center">${DATA.length}</td>
+    <td class="center">${new Set(getWorkingData().map(r=>r.Agent_ID)).size}</td>
+    <td class="center">${getWorkingData().length}</td>
     <td class="center">—</td>
   </tr>`;
   html+='</tbody>';
@@ -1589,15 +1637,25 @@ document.getElementById('fileInput').addEventListener('change',function(){
 
 async function processMultipleFiles(files) {
     let totalAdded = 0;
+    let totalUpdated = 0;
     
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const added = await processSingleFile(file);
-        totalAdded += added;
+        const result = await processSingleFile(file);
+        totalAdded += result.added;
+        totalUpdated += result.updated;
     }
     
-    toast(`✅ Processed ${totalAdded} records from ${files.length} file(s)!`);
-    // Reset file input so you can select the same file again later if needed
+    if (totalAdded > 0 && totalUpdated > 0) {
+        toast(`✅ Added ${totalAdded} records & updated ${totalUpdated} agent profiles!`);
+    } else if (totalAdded > 0) {
+        toast(`✅ Processed ${totalAdded} new records!`);
+    } else if (totalUpdated > 0) {
+        toast(`✅ Synced teams! Updated ${totalUpdated} agent records.`);
+    } else {
+        toast(`⚠️ No new data or updates found in the file(s).`);
+    }
+    
     document.getElementById('fileInput').value = '';
     renderAddData();
     renderView('overview');
@@ -1609,85 +1667,169 @@ function processSingleFile(file){
     reader.onload=function(e){
       const data=new Uint8Array(e.target.result);
       const wb=XLSX.read(data,{type:'array'});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const json=XLSX.utils.sheet_to_json(ws,{header:1});
-      if(!json.length){ resolve(0); return; }
       
-      let hdrRow=-1; let headers=[];
-      for(let i=0;i<Math.min(10,json.length);i++){
-        const row=json[i].map(c=>String(c||'').trim());
-        if(row.some(c=>c.toLowerCase().includes('agent_id')||c.toLowerCase().includes('agent id'))){
-          hdrRow=i; headers=row; break;
-        }
-      }
-      if(hdrRow===-1){ resolve(0); return; }
-      
-      const colMap={};
-      const fieldAliases={
-        Agent_ID:['agent_id','agent id'],
-        Agent_Name:['agent_name','agent name','name'],
-        Manager:['manager'],
-        Position:['position'],
-        Stage:['stage'],
-        Month:['month'],
-        ABS:['abs'],
-        NPS:['nps'],
-        Chat_Resolution:['chat_resolution','chat resolution','chat res'],
-        First_Response_Avg:['first_response_avg','first response avg','first response','1st resp'],
-        EPH:['eph'],
-        Quality:['quality'],
-        Errors:['errors'],
-        Overall_Score:['overall_score','overall score','overall'],
-      };
-      Object.entries(fieldAliases).forEach(([field,aliases])=>{
-        headers.forEach((h,i)=>{if(aliases.includes(h.toLowerCase()))colMap[field]=i;});
-      });
-      
-      const month=document.getElementById('pasteMonth').value.trim() || (()=>{
-        const fn=file.name.toLowerCase();
-        const mNames={jan:'Jan',feb:'Feb',mar:'Mar',apr:'Apr',may:'May',jun:'Jun',
-                      jul:'Jul',aug:'Aug',sep:'Sep',oct:'Oct',nov:'Nov',dec:'Dec'};
-        let year = '26'; // Default
-        const yearMatch = fn.match(/20(\d{2})/);
-        if (yearMatch) {
-            year = yearMatch[1]; 
-        } else if (fn.includes('25')) {
-            year = '25';
-        } else if (fn.includes('24')) {
-            year = '24';
-        }
+      let added = 0;
+      let updated = 0;
 
-        for(const[k,v] of Object.entries(mNames)){
-          if(fn.includes(k)) return v + '-' + year; 
-        }
-        return 'New Month';
-      })();
-      
-      let added=0;
-      for(let i=hdrRow+1;i<json.length;i++){
-        const row=json[i];
-        const agentId=colMap.Agent_ID!=null?row[colMap.Agent_ID]:null;
-        if(!agentId) continue;
-        const rec={
-          Agent_ID:parseInt(agentId)||agentId,
-          Agent_Name:colMap.Agent_Name!=null?String(row[colMap.Agent_Name]||''):'',
-          Manager:colMap.Manager!=null?String(row[colMap.Manager]||''):'',
-          Position:colMap.Position!=null?String(row[colMap.Position]||''):'',
-          Stage:colMap.Stage!=null?String(row[colMap.Stage]||''):'',
-          Month:colMap.Month!=null?String(row[colMap.Month]||''):month,
-          ABS:toNum(colMap.ABS!=null?row[colMap.ABS]:null),
-          NPS:toNum(colMap.NPS!=null?row[colMap.NPS]:null),
-          Chat_Resolution:toNum(colMap.Chat_Resolution!=null?row[colMap.Chat_Resolution]:null),
-          First_Response_Avg:toNum(colMap.First_Response_Avg!=null?row[colMap.First_Response_Avg]:null),
-          EPH:toNum(colMap.EPH!=null?row[colMap.EPH]:null),
-          Quality:toNum(colMap.Quality!=null?row[colMap.Quality]:null),
-          Errors:toNum(colMap.Errors!=null?row[colMap.Errors]:null),
-          Overall_Score:toNum(colMap.Overall_Score!=null?row[colMap.Overall_Score]:null),
-        };
-        upsertRecord(rec); 
-        added++;
+      // Loop through all sheets
+      for (let s = 0; s < wb.SheetNames.length; s++) {
+          const sName = wb.SheetNames[s].toLowerCase();
+          
+          // In multi-sheet files, explicitly ignore secondary tracking sheets to avoid overwriting clean Agent mapping with garbage defaults
+          if (wb.SheetNames.length > 1 && (sName.includes('attendance') || sName.includes('msv') || sName.includes('gdpr') || sName.includes('schedule') || sName.includes('pulse') || sName.includes('attrition') || sName.includes('dashboard') || sName.includes('overhead'))) {
+              continue;
+          }
+
+          const ws = wb.Sheets[wb.SheetNames[s]];
+          const json = XLSX.utils.sheet_to_json(ws, {header: 1});
+          if(!json.length) continue;
+          
+          let hdrRow = -1; 
+          let headers = [];
+          for(let i=0; i<Math.min(15, json.length); i++){
+            const row = json[i].map(c => String(c||'').trim().toLowerCase());
+            // More strict identification
+            if(row.includes('agent id') || row.includes('agent_id') || row.includes('transcom id') || row.includes('bp number')){
+              hdrRow = i; 
+              headers = row; 
+              break;
+            }
+          }
+          if(hdrRow === -1) continue;
+
+          // Detect Sheet Type
+          const isDist = (headers.includes('1st line manager') || headers.includes('manager')) && (headers.includes('transcom id') || headers.includes('agent id') || headers.includes('agent_id') || headers.includes('bp number'));
+          const isScorecard = headers.some(h => h.includes('overall') || h.includes('nps') || h.includes('quality') || h.includes('abs'));
+
+          // 1. Process "Agents Distribution" sheet
+          if (isDist) {
+              const idIdx = headers.indexOf('transcom id') >= 0 ? headers.indexOf('transcom id') : headers.findIndex(h=>h.includes('agent id')||h.includes('agent_id')||h==='bp number');
+              const nameIdx = headers.indexOf('name') >= 0 ? headers.indexOf('name') : headers.indexOf('agent name');
+              const mgrIdx = headers.indexOf('1st line manager') >= 0 ? headers.indexOf('1st line manager') : headers.indexOf('manager');
+              const posIdx = headers.indexOf('position');
+              const statusIdx = headers.indexOf('status') >= 0 ? headers.indexOf('status') : headers.findIndex(h => h.includes('active /inactive') || h.includes('active/inactive') || h === 'state');
+              
+              if (idIdx >= 0) {
+                  const seenAgents = new Set();
+                  for(let i=hdrRow+1; i<json.length; i++){
+                      const row = json[i];
+                      if(!row) continue;
+                      const aIdStr = String(row[idIdx]||'').trim();
+                      const aId = parseInt(aIdStr) || aIdStr;
+                      if(!aId) continue;
+                      
+                      const aName = nameIdx >= 0 && row[nameIdx] ? String(row[nameIdx]).trim() : null;
+                      const aMgr = mgrIdx >= 0 && row[mgrIdx] ? String(row[mgrIdx]).trim() : null;
+                      const aPos = posIdx >= 0 && row[posIdx] ? String(row[posIdx]).trim() : null;
+                      
+                      let isActive = true;
+                      if (statusIdx >= 0 && row[statusIdx] != null) {
+                          const s = String(row[statusIdx]).trim().toLowerCase();
+                          isActive = (s === 'active' || s === 'yes' || s === 'true' || s === '1');
+                      }
+                      
+                      if(aMgr || aPos || aName || statusIdx >= 0) {
+                          if (!GLOBAL_AGENT_MAP[aId]) GLOBAL_AGENT_MAP[aId] = {};
+                          
+                          if (aName && aName !== '-') GLOBAL_AGENT_MAP[aId].name = aName;
+                          if (aMgr && aMgr !== '-') GLOBAL_AGENT_MAP[aId].manager = aMgr;
+                          if (aPos && aPos !== '-') GLOBAL_AGENT_MAP[aId].position = aPos;
+                          
+                          // If a status column exists, trust it. Otherwise, default to Active if entirely new.
+                          if (statusIdx >= 0) {
+                              GLOBAL_AGENT_MAP[aId].isActive = isActive;
+                          } else if (GLOBAL_AGENT_MAP[aId].isActive === undefined) {
+                              GLOBAL_AGENT_MAP[aId].isActive = true;
+                          }
+
+                          DATA.forEach(rec => {
+                              if(String(rec.Agent_ID) === String(aId)) {
+                                  if(aName && aName !== '-') rec.Agent_Name = aName;
+                                  if(aMgr && aMgr !== '-') rec.Manager = aMgr;
+                                  if(aPos && aPos !== '-') rec.Position = aPos;
+                                  if(!seenAgents.has(aId)) {
+                                      updated++;
+                                      seenAgents.add(aId);
+                                  }
+                              }
+                          });
+                      }
+                  }
+              }
+          }
+
+          // 2. Process Standard "Scorecard"
+          if (isScorecard) {
+              const colMap={};
+              const fieldAliases={
+                Agent_ID:['agent_id','agent id','transcom id'],
+                Agent_Name:['agent_name','agent name','name'],
+                Manager:['manager','1st line manager'],
+                Position:['position'],
+                Stage:['stage'],
+                Month:['month'],
+                ABS:['abs'],
+                NPS:['nps'],
+                Chat_Resolution:['chat_resolution','chat resolution','chat res'],
+                First_Response_Avg:['first_response_avg','first response avg','first response','1st resp'],
+                EPH:['eph'],
+                Quality:['quality'],
+                Errors:['errors'],
+                Overall_Score:['overall_score','overall score','overall'],
+              };
+              Object.entries(fieldAliases).forEach(([field,aliases])=>{
+                headers.forEach((h,idx)=>{if(aliases.includes(h))colMap[field]=idx;});
+              });
+              
+              const month = document.getElementById('pasteMonth').value.trim() || (()=>{
+                const fn=file.name.toLowerCase();
+                const mNames={jan:'Jan',feb:'Feb',mar:'Mar',apr:'Apr',may:'May',jun:'Jun',
+                              jul:'Jul',aug:'Aug',sep:'Sep',oct:'Oct',nov:'Nov',dec:'Dec'};
+                let year = '26'; // Default fallback
+                const yearMatch = fn.match(/20(\d{2})/);
+                if (yearMatch) {
+                    year = yearMatch[1]; 
+                } else if (fn.includes('25')) {
+                    year = '25';
+                } else if (fn.includes('24')) {
+                    year = '24';
+                }
+                for(const[k,v] of Object.entries(mNames)){
+                  if(fn.includes(k)) return v + '-' + year; 
+                }
+                return 'New Month';
+              })();
+              
+              for(let i=hdrRow+1; i<json.length; i++){
+                const row = json[i];
+                if(!row) continue;
+                const agentIdRaw = colMap.Agent_ID!=null?row[colMap.Agent_ID]:null;
+                if(!agentIdRaw) continue;
+                const agentId = parseInt(agentIdRaw) || String(agentIdRaw).trim();
+                if(!agentId) continue;
+                
+                const rec={
+                  Agent_ID: agentId,
+                  Agent_Name: colMap.Agent_Name!=null ? String(row[colMap.Agent_Name]||'') : '',
+                  Manager: colMap.Manager!=null ? String(row[colMap.Manager]||'') : '',
+                  Position: colMap.Position!=null ? String(row[colMap.Position]||'') : '',
+                  Stage: colMap.Stage!=null ? String(row[colMap.Stage]||'') : '',
+                  Month: colMap.Month!=null ? String(row[colMap.Month]||'') : month,
+                  ABS: toNum(colMap.ABS!=null ? row[colMap.ABS] : null),
+                  NPS: toNum(colMap.NPS!=null ? row[colMap.NPS] : null),
+                  Chat_Resolution: toNum(colMap.Chat_Resolution!=null ? row[colMap.Chat_Resolution] : null),
+                  First_Response_Avg: toNum(colMap.First_Response_Avg!=null ? row[colMap.First_Response_Avg] : null),
+                  EPH: toNum(colMap.EPH!=null ? row[colMap.EPH] : null),
+                  Quality: toNum(colMap.Quality!=null ? row[colMap.Quality] : null),
+                  Errors: toNum(colMap.Errors!=null ? row[colMap.Errors] : null),
+                  Overall_Score: toNum(colMap.Overall_Score!=null ? row[colMap.Overall_Score] : null),
+                };
+                upsertRecord(rec); 
+                added++;
+              }
+          }
       }
-      resolve(added);
+      resolve({added, updated});
     };
     reader.readAsArrayBuffer(file);
   });
@@ -1701,37 +1843,105 @@ function importPaste(){
   const lines=raw.split('\n').map(l=>l.trim()).filter(Boolean);
   const sep=lines[0].includes('\t')?'\t':',';
   const headers=lines[0].split(sep).map(h=>h.trim().replace(/^"|"$/g,'').toLowerCase());
-  const idx={};
-  ['agent_id','agent_name','manager','position','stage','abs','nps','chat_resolution',
-   'first_response_avg','eph','quality','errors','overall_score'].forEach(k=>{
-    idx[k]=headers.indexOf(k);
-  });
-  let added=0;
-  for(let i=1;i<lines.length;i++){
-    const cols=lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,''));
-    const agentId=idx.agent_id>=0?cols[idx.agent_id]:null;
-    if(!agentId) continue;
-    
-    const rec={
-      Agent_ID:parseInt(agentId)||agentId,
-      Agent_Name:idx.agent_name>=0?cols[idx.agent_name]:'',
-      Manager:idx.manager>=0?cols[idx.manager]:'',
-      Position:idx.position>=0?cols[idx.position]:'',
-      Stage:idx.stage>=0?cols[idx.stage]:'',
-      Month:month,
-      ABS:toNum(idx.abs>=0?cols[idx.abs]:null),
-      NPS:toNum(idx.nps>=0?cols[idx.nps]:null),
-      Chat_Resolution:toNum(idx.chat_resolution>=0?cols[idx.chat_resolution]:null),
-      First_Response_Avg:toNum(idx.first_response_avg>=0?cols[idx.first_response_avg]:null),
-      EPH:toNum(idx.eph>=0?cols[idx.eph]:null),
-      Quality:toNum(idx.quality>=0?cols[idx.quality]:null),
-      Errors:toNum(idx.errors>=0?cols[idx.errors]:null),
-      Overall_Score:toNum(idx.overall_score>=0?cols[idx.overall_score]:null),
-    };
-    upsertRecord(rec); 
-    added++;
+  
+  const isDist = headers.includes('1st line manager') || headers.includes('transcom id') || headers.includes('status');
+  const isScorecard = headers.some(h => h.includes('overall') || h.includes('nps') || h.includes('quality') || h.includes('abs'));
+
+  let added = 0;
+  let updated = 0;
+
+  if (isDist) {
+      const idIdx = headers.indexOf('transcom id') >= 0 ? headers.indexOf('transcom id') : headers.findIndex(h=>h.includes('agent id')||h.includes('agent_id')||h==='bp number');
+      const nameIdx = headers.indexOf('name') >= 0 ? headers.indexOf('name') : headers.indexOf('agent name');
+      const mgrIdx = headers.indexOf('1st line manager') >= 0 ? headers.indexOf('1st line manager') : headers.indexOf('manager');
+      const posIdx = headers.indexOf('position');
+      const statusIdx = headers.indexOf('status') >= 0 ? headers.indexOf('status') : headers.findIndex(h => h.includes('active /inactive') || h.includes('active/inactive') || h === 'state');
+      
+      if (idIdx >= 0) {
+          for(let i=1; i<lines.length; i++){
+              const cols = lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,''));
+              const aIdStr = cols[idIdx];
+              if (!aIdStr) continue;
+              const aId = parseInt(aIdStr) || aIdStr;
+              
+              const aName = nameIdx >= 0 ? cols[nameIdx] : null;
+              const aMgr = mgrIdx >= 0 ? cols[mgrIdx] : null;
+              const aPos = posIdx >= 0 ? cols[posIdx] : null;
+              let isActive = true;
+              if (statusIdx >= 0 && cols[statusIdx]) {
+                  const s = cols[statusIdx].toLowerCase();
+                  isActive = (s === 'active' || s === 'yes' || s === 'true' || s === '1');
+              }
+              
+              if (!GLOBAL_AGENT_MAP[aId]) GLOBAL_AGENT_MAP[aId] = {};
+              if (aName && aName !== '-') GLOBAL_AGENT_MAP[aId].name = aName;
+              if (aMgr && aMgr !== '-') GLOBAL_AGENT_MAP[aId].manager = aMgr;
+              if (aPos && aPos !== '-') GLOBAL_AGENT_MAP[aId].position = aPos;
+              if (statusIdx >= 0) {
+                  GLOBAL_AGENT_MAP[aId].isActive = isActive;
+              } else if (GLOBAL_AGENT_MAP[aId].isActive === undefined) {
+                  GLOBAL_AGENT_MAP[aId].isActive = true;
+              }
+              
+              DATA.forEach(rec => {
+                  if(String(rec.Agent_ID) === String(aId)) {
+                      if(aName && aName !== '-') rec.Agent_Name = aName;
+                      if(aMgr && aMgr !== '-') rec.Manager = aMgr;
+                      if(aPos && aPos !== '-') rec.Position = aPos;
+                  }
+              });
+              updated++;
+          }
+      }
   }
-  toast(`✅ Processed ${added} records for ${month} — all tabs updated!`);
+  
+  if (isScorecard || !isDist) {
+      const idx={};
+      ['agent_id','agent_name','manager','position','stage','abs','nps','chat_resolution',
+       'first_response_avg','eph','quality','errors','overall_score'].forEach(k=>{
+        idx[k]=headers.indexOf(k);
+      });
+      
+      if (idx.agent_id === -1) idx.agent_id = headers.indexOf('transcom id');
+      if (idx.manager === -1) idx.manager = headers.indexOf('1st line manager');
+      
+      for(let i=1;i<lines.length;i++){
+        const cols=lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,''));
+        const agentIdRaw=idx.agent_id>=0?cols[idx.agent_id]:null;
+        if(!agentIdRaw) continue;
+        const agentId = parseInt(agentIdRaw) || agentIdRaw;
+        
+        const rec={
+          Agent_ID: agentId,
+          Agent_Name:idx.agent_name>=0?cols[idx.agent_name]:'',
+          Manager:idx.manager>=0?cols[idx.manager]:'',
+          Position:idx.position>=0?cols[idx.position]:'',
+          Stage:idx.stage>=0?cols[idx.stage]:'',
+          Month:month,
+          ABS:toNum(idx.abs>=0?cols[idx.abs]:null),
+          NPS:toNum(idx.nps>=0?cols[idx.nps]:null),
+          Chat_Resolution:toNum(idx.chat_resolution>=0?cols[idx.chat_resolution]:null),
+          First_Response_Avg:toNum(idx.first_response_avg>=0?cols[idx.first_response_avg]:null),
+          EPH:toNum(idx.eph>=0?cols[idx.eph]:null),
+          Quality:toNum(idx.quality>=0?cols[idx.quality]:null),
+          Errors:toNum(idx.errors>=0?cols[idx.errors]:null),
+          Overall_Score:toNum(idx.overall_score>=0?cols[idx.overall_score]:null),
+        };
+        upsertRecord(rec); 
+        added++;
+      }
+  }
+
+  if (added > 0 && updated > 0) {
+      toast(`✅ Pasted ${added} records & updated ${updated} agent profiles!`);
+  } else if (added > 0) {
+      toast(`✅ Pasted ${added} new records!`);
+  } else if (updated > 0) {
+      toast(`✅ Synced teams! Updated ${updated} agent records.`);
+  } else {
+      toast(`⚠️ No new data or updates found.`);
+  }
+  
   document.getElementById('pasteArea').value='';
   renderAddData();
   renderView('overview');
