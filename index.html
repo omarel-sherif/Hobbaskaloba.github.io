@@ -1,0 +1,1750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Samsung Agent KPI Tracker</title>
+<!-- Professional Sans-Serif font -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<!-- Chart.js for Visuals -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* CSS Variables for Theming */
+:root {
+  /* Defaults (Light Theme) */
+  --samsung-blue: #0381FE;
+  --samsung-navy: #1428A0;
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface2: #f8f9fa;
+  --surface3: #edf2f7;
+  --border: #e4e7eb;
+  --text: #111827;
+  --muted: #6b7280;
+  --accent: var(--samsung-blue);
+  
+  /* Status Colors */
+  --green: #059669;
+  --red: #dc2626;
+  --amber: #d97706;
+  --purple: #7c3aed;
+  --cyan: #0891b2;
+
+  /* Adaptive Cell Backgrounds */
+  --bg-green: #ecfdf5; --text-green: #059669;
+  --bg-red: #fef2f2; --text-red: #dc2626;
+  --bg-amber: #fffbeb; --text-amber: #d97706;
+  
+  --font-main: 'Inter', sans-serif;
+}
+
+/* Dark Theme Overrides */
+body.dark-mode {
+  --samsung-blue: #38bdf8; 
+  --samsung-navy: #1a56db;
+  --bg: #0a0f1e;
+  --surface: #111827;
+  --surface2: #1e293b;
+  --surface3: #334155;
+  --border: #334155;
+  --text: #f8fafc;
+  --muted: #94a3b8;
+
+  --bg-green: rgba(16,185,129,0.15); --text-green: #34d399;
+  --bg-red: rgba(239,68,68,0.15); --text-red: #f87171;
+  --bg-amber: rgba(245,158,11,0.15); --text-amber: #fbbf24;
+}
+
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font-main);overflow:hidden; font-size: 12px; transition: background 0.3s, color 0.3s;}
+
+/* ── layout ── */
+#app{display:grid;grid-template-rows:60px minmax(0, 1fr);grid-template-columns:240px minmax(0, 1fr);height:100vh;width:100vw;overflow:hidden;}
+#topbar{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding:0 24px;
+  background:var(--surface);border-bottom:1px solid var(--border);z-index:100; box-shadow: 0 1px 2px rgba(0,0,0,0.02);}
+#topbar h1{font-family:var(--font-main);font-size:16px;font-weight:800;letter-spacing:-0.02em;
+  color:var(--text);white-space:nowrap}
+#topbar h1 span{color:var(--samsung-blue)}
+.pill{font-size:11px;font-weight:600;padding:4px 10px;border-radius:99px;background:var(--surface2);
+  color:var(--muted);border:1px solid var(--border);white-space:nowrap}
+.pill.live{background:var(--bg-green);color:var(--green);border-color:var(--green)}
+#topbar-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+
+/* buttons */
+.btn-primary, .action-btn {display:flex;align-items:center;gap:6px;padding:8px 16px;font-family:var(--font-main);
+  font-size:12px;font-weight:600;background:var(--samsung-blue);color:#fff;border:none;border-radius:8px;cursor:pointer;
+  transition:all .2s ease;}
+.btn-primary:hover, .action-btn:hover {background:var(--samsung-navy); box-shadow: 0 4px 6px rgba(3, 129, 254, 0.2);}
+.btn-primary svg{flex-shrink:0}
+#fileInput{display:none}
+
+/* sidebar */
+#sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:16px 0; min-width: 0;}
+.sidebar-section{padding:8px 20px 4px;font-size:10px;letter-spacing:.05em;color:var(--muted);
+  text-transform:uppercase;font-weight:700}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;cursor:pointer;
+  font-size:13px;font-weight:500;color:var(--muted);transition:.1s;border-left:3px solid transparent}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--surface3);color:var(--samsung-blue);border-left-color:var(--samsung-blue)}
+.nav-item .nav-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+.nav-item .nav-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* main content */
+#main{overflow-y:auto; overflow-x:hidden; display:flex; flex-direction:column; background: var(--bg);}
+.view{display:none; padding:24px;}
+
+.view.active{
+  display:flex; 
+  flex-direction:column; 
+  gap:24px;
+  flex: 1 0 auto; /* 🔥 Let view expand naturally so #main scrolls */
+}
+
+/* cards / panels */
+.panel{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:12px;
+  overflow:hidden; 
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+
+  display:flex;
+  flex-direction:column;
+  flex-shrink: 0; /* 🔥 PREVENTS SQUISHING - Panel holds its shape! */
+}
+.panel-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;
+  align-items:center;gap:10px;justify-content:space-between; background: var(--surface2);}
+.panel-title{font-family:var(--font-main);font-size:14px;font-weight:700;color:var(--text);
+  display:flex;align-items:center;gap:8px}
+.panel-sub{font-size:11px;color:var(--muted); font-weight: 500;}
+.panel-body{padding:0}
+
+/* tables */
+.tbl-wrap {
+  overflow:auto;
+  width:100%;
+  max-height: 60vh; /* 🔥 Ensures sticky headers work while scrolling giant tables */
+  border-top: 1px solid var(--border);
+}
+
+table{width:100%;border-collapse:collapse;font-size:12px;}
+thead{position:sticky;top:0;z-index:10}
+thead tr{background:var(--surface3)}
+th{padding:10px 12px;text-align:center;font-weight:700;color:var(--text);
+  border-bottom:1px solid var(--border);white-space:nowrap;font-size:11px}
+th.left, td.left {text-align:left}
+th.right, td.right {text-align:right}
+th.center, td.center {text-align:center}
+td{padding:8px 12px;border-bottom:1px solid var(--border);text-align:center;
+  white-space:nowrap;color:var(--text); font-variant-numeric: tabular-nums;}
+tr:hover td{background:var(--surface2)}
+tr:last-child td{border-bottom:none}
+
+/* Adaptive cell classes for table highlights */
+.cell-bad { background: var(--bg-red); color: var(--text-red); }
+.cell-warn { background: var(--bg-amber); color: var(--text-amber); }
+.cell-good { background: var(--bg-green); color: var(--text-green); }
+
+/* month header stripe */
+th.month-hdr{background:var(--surface2);color:var(--samsung-blue);border-left:1px solid var(--border)}
+td.month-cell{border-left:1px solid var(--border)}
+th.extra-hdr{background:var(--surface3);color:var(--purple);font-size:10px}
+td.extra-cell{background:var(--surface2);color:var(--purple)}
+
+/* trend arrows */
+.trend-up{color:var(--green);font-weight:800}
+.trend-dn{color:var(--red);font-weight:800}
+.trend-eq{color:var(--muted)}
+
+/* chip badges */
+.chip{display:inline-block;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700; text-align:center;}
+.chip-green{background:var(--bg-green);color:var(--text-green)}
+.chip-red{background:var(--bg-red);color:var(--text-red)}
+.chip-amber{background:var(--bg-amber);color:var(--text-amber)}
+.chip-blue{background:var(--surface3);color:var(--samsung-blue)}
+.chip-purple{background:var(--surface2);color:var(--purple)}
+
+/* bar mini */
+.mini-bar-wrap{display:flex;align-items:center;gap:8px; justify-content: flex-end;}
+.mini-bar-bg{flex:1;height:6px;background:var(--border);border-radius:3px;min-width:40px; max-width: 60px;}
+.mini-bar-fill{height:100%;border-radius:3px;transition:width .4s ease}
+
+/* filter row */
+.filter-row{display:flex;align-items:center;gap:12px;padding:12px 20px;
+  background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.filter-row label{font-size:11px;font-weight:600;color:var(--text);white-space:nowrap}
+select,input[type=text]{background:var(--surface);border:1px solid var(--border);
+  color:var(--text);font-family:var(--font-main);font-size:12px;padding:6px 10px;
+  border-radius:6px;outline:none;transition:border-color .2s}
+select:focus,input[type=text]:focus{border-color:var(--samsung-blue); box-shadow: 0 0 0 2px rgba(3,129,254,0.1)}
+input[type=text]{width:200px}
+
+/* stat cards row */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:16px 20px;display:flex;flex-direction:column;gap:6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);}
+.stat-card .sc-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.stat-card .sc-value{font-family:var(--font-main);font-size:28px;font-weight:800;color:var(--text)}
+.stat-card .sc-sub{font-size:11px;font-weight:500;color:var(--muted)}
+.stat-card.green .sc-value{color:var(--green)}
+.stat-card.red .sc-value{color:var(--red)}
+.stat-card.cyan .sc-value{color:var(--cyan)}
+.stat-card.amber .sc-value{color:var(--amber)}
+.stat-card.purple .sc-value{color:var(--purple)}
+.stat-card.blue .sc-value{color:var(--samsung-blue)}
+
+/* upload zone */
+#uploadZone{border:2px dashed var(--border);border-radius:12px;padding:40px;
+  text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px;
+  cursor:pointer;transition:.2s; background: var(--surface2);}
+#uploadZone:hover,#uploadZone.drag{border-color:var(--samsung-blue);background:var(--surface3);}
+#uploadZone .uz-icon{font-size:40px}
+#uploadZone h3{font-family:var(--font-main);font-size:16px;font-weight:700;color:var(--text)}
+#uploadZone p{font-size:12px;color:var(--muted)}
+
+.btn-danger {background: var(--red); color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-family: var(--font-main); font-size: 11px; font-weight: 600;}
+.btn-danger:hover {background: #b91c1c;}
+
+/* scrollbars */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--muted);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--text)}
+
+/* kpi selector tabs */
+.kpi-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:12px 20px;
+  background:var(--surface);border-bottom:1px solid var(--border)}
+.kpi-tab{padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;
+  border:1px solid var(--border);color:var(--muted);transition:.1s;background:var(--surface2)}
+.kpi-tab:hover{background:var(--border);color:var(--text)}
+.kpi-tab.active{background:var(--samsung-blue);color:#fff;border-color:var(--samsung-blue)}
+
+/* row highlight for top/bot */
+tr.top3 td{background:var(--bg-green)}
+tr.bot3 td{background:var(--bg-red)}
+
+/* toast */
+#toast{position:fixed;bottom:24px;right:24px;background:var(--surface3);color:var(--text); border:1px solid var(--border);
+  padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;font-family:var(--font-main);
+  opacity:0;transition:.3s;pointer-events:none;z-index:999; box-shadow: 0 10px 15px rgba(0,0,0,0.1);}
+#toast.show{opacity:1}
+
+/* rank badge */
+.rank{display:inline-block;width:24px;height:24px;border-radius:50%;
+  font-size:11px;font-weight:800;text-align:center;line-height:24px}
+.rank-1{background:#f59e0b;color:#fff}
+.rank-2{background:#94a3b8;color:#fff}
+.rank-3{background:#b45309;color:#fff}
+.rank-n{background:var(--border);color:var(--muted)}
+
+.chart-container { position: relative; height: 240px; width: 100%; padding: 10px; }
+.chart-row { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+@media (max-width: 1200px) { .chart-row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- topbar -->
+<div id="topbar">
+  <h1>SAMSUNG <span>KPI TRACKER</span></h1>
+  <span class="pill live">● LIVE</span>
+  <span class="pill" id="dataInfo">No records yet...</span>
+  <div id="topbar-right">
+    <span class="pill" id="monthPill"></span>
+    
+    <!-- DARK MODE TOGGLE BUTTON -->
+    <button class="action-btn" id="themeToggleBtn" onclick="toggleTheme()" style="background:var(--surface2); color:var(--text); border:1px solid var(--border);">
+      <span id="themeIcon">🌙</span> <span style="font-size: 11px;">Dark Mode</span>
+    </button>
+  </div>
+</div>
+
+<!-- sidebar -->
+<div id="sidebar">
+  <div class="sidebar-section">Core Dashboard</div>
+  <div class="nav-item active" data-view="overview" onclick="switchView(this)">
+    <span class="nav-icon">🏠</span><span class="nav-label">Overview</span>
+  </div>
+  <div class="nav-item" data-view="agentTrend" onclick="switchView(this)">
+    <span class="nav-icon">📊</span><span class="nav-label">Agent KPI Trends</span>
+  </div>
+  <div class="nav-item" data-view="byKpi" onclick="switchView(this)">
+    <span class="nav-icon">📈</span><span class="nav-label">By KPI — All Agents</span>
+  </div>
+
+  <div class="sidebar-section" style="margin-top:12px">Analysis</div>
+  <div class="nav-item" data-view="a1" onclick="switchView(this)">
+    <span class="nav-icon">📉</span><span class="nav-label">A1 · Team Monthly Avgs</span>
+  </div>
+  <div class="nav-item" data-view="a2" onclick="switchView(this)">
+    <span class="nav-icon">🎯</span><span class="nav-label">A2 · Consistency Score</span>
+  </div>
+  <div class="nav-item" data-view="a3" onclick="switchView(this)">
+    <span class="nav-icon">🏆</span><span class="nav-label">A3 · Target Achievement</span>
+  </div>
+  <div class="nav-item" data-view="a4" onclick="switchView(this)">
+    <span class="nav-icon">👔</span><span class="nav-label">A4 · Manager Teams</span>
+  </div>
+  <div class="nav-item" data-view="a5" onclick="switchView(this)">
+    <span class="nav-icon">🔄</span><span class="nav-label">A5 · MoM Delta Matrix</span>
+  </div>
+  <div class="nav-item" data-view="a6" onclick="switchView(this)">
+    <span class="nav-icon">🏅</span><span class="nav-label">A6 · Position Benchmarks</span>
+  </div>
+  <div class="nav-item" data-view="a7" onclick="switchView(this)">
+    <span class="nav-icon">🥇</span><span class="nav-label">A7 · Top 10 per Month</span>
+  </div>
+  <div class="nav-item" data-view="a8" onclick="switchView(this)">
+    <span class="nav-icon">⚠️</span><span class="nav-label">A8 · Absence Risk</span>
+  </div>
+  <div class="nav-item" data-view="a9" onclick="switchView(this)">
+    <span class="nav-icon">⭐</span><span class="nav-label">A9 · NPS Trend</span>
+  </div>
+  <div class="nav-item" data-view="a10" onclick="switchView(this)">
+    <span class="nav-icon">📐</span><span class="nav-label">A10 · Percentile Rank</span>
+  </div>
+  <div class="nav-item" data-view="a11" onclick="switchView(this)">
+    <span class="nav-icon">🔍</span><span class="nav-label">A11 · Quality vs Errors</span>
+  </div>
+  <div class="nav-item" data-view="a12" onclick="switchView(this)">
+    <span class="nav-icon">⚡</span><span class="nav-label">A12 · EPH Trend</span>
+  </div>
+  <div class="nav-item" data-view="a13" onclick="switchView(this)">
+    <span class="nav-icon">🚀</span><span class="nav-label">A13 · Improvement Leaders</span>
+  </div>
+
+  <div class="sidebar-section" style="margin-top:12px">Data Management</div>
+  <div class="nav-item" data-view="addData" onclick="switchView(this)">
+    <span class="nav-icon">⚙️</span><span class="nav-label">Manage & Import Data</span>
+  </div>
+</div>
+
+<!-- main -->
+<div id="main">
+
+<!-- ═══ OVERVIEW ═══ -->
+<div class="view active" id="view-overview">
+  <div class="stat-grid" id="overviewStats"></div>
+  
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">📊 Team Average — Overall Score Trend</div>
+    </div>
+    <div class="panel-body">
+      <div class="chart-container" style="height: 220px;">
+        <canvas id="overviewChartCanvas"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-row">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">👔 Manager Leaderboard</div>
+        <span class="panel-sub">Latest Month Overall Score</span>
+      </div>
+      <div class="panel-body">
+        <div class="chart-container">
+          <canvas id="managerBarChart"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">👥 Workforce Distribution</div>
+        <span class="panel-sub">Active Agents by Position</span>
+      </div>
+      <div class="panel-body">
+        <div class="chart-container">
+          <canvas id="positionDoughnutChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">📋 All KPIs — Team Average per Month</div>
+      <span class="panel-sub">Scroll right for all months →</span>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-overview"></table></div>
+  </div>
+</div>
+
+<!-- ═══ AGENT KPI TREND ═══ -->
+<div class="view" id="view-agentTrend">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">📊 Agent KPI Trends — All Months Dynamic</div>
+      <span class="panel-sub">Columns expand automatically when new months are added</span>
+    </div>
+    <div class="filter-row">
+      <label>Search agent:</label>
+      <input type="text" id="agentSearch" placeholder="name or ID…" oninput="renderAgentTrend()"/>
+      <label>Manager:</label>
+      <select id="filterManager" onchange="renderAgentTrend()"><option value="">All</option></select>
+      <label>Position:</label>
+      <select id="filterPosition" onchange="renderAgentTrend()"><option value="">All</option></select>
+      <label>KPI:</label>
+      <select id="filterKpi" onchange="renderAgentTrend()">
+        <option value="Overall_Score">Overall Score</option>
+        <option value="ABS">ABS</option>
+        <option value="NPS">NPS</option>
+        <option value="Chat_Resolution">Chat Resolution</option>
+        <option value="First_Response_Avg">First Response</option>
+        <option value="EPH">EPH</option>
+        <option value="Quality">Quality</option>
+        <option value="Errors">Errors</option>
+      </select>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-agentTrend"></table></div>
+  </div>
+</div>
+
+<!-- ═══ BY KPI ═══ -->
+<div class="view" id="view-byKpi">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">📈 By KPI — All Agents, All Months</div>
+    </div>
+    <div class="kpi-tabs" id="kpiTabs"></div>
+    <div class="filter-row">
+      <label>Search:</label>
+      <input type="text" id="byKpiSearch" placeholder="agent name…" oninput="renderByKpi()"/>
+      <label>Sort:</label>
+      <select id="byKpiSort" onchange="renderByKpi()">
+        <option value="latest">Latest Month</option>
+        <option value="name">Name A–Z</option>
+        <option value="best">Best Ever</option>
+        <option value="worst">Worst Ever</option>
+      </select>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-byKpi"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A1 Team Monthly Avgs ═══ -->
+<div class="view" id="view-a1">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">📉 A1 · Team Monthly Averages — All KPIs</div>
+      <span class="panel-sub">Average across all active agents · new months auto-appear</span>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a1"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A2 Consistency ═══ -->
+<div class="view" id="view-a2">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">🎯 A2 · Agent Consistency Score — Overall KPI</div>
+      <span class="panel-sub">How many months each agent met or exceeded their own average</span>
+    </div>
+    <div class="filter-row">
+      <label>Search:</label>
+      <input type="text" id="a2Search" placeholder="agent name…" oninput="renderA2()"/>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a2"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A3 Target Achievement ═══ -->
+<div class="view" id="view-a3">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">🏆 A3 · Target Achievement Rate per KPI per Month</div>
+      <span class="panel-sub">% of agents hitting targets: ABS≤6% · NPS≥80% · Chat≥90% · EPH≥5.5 · Quality≥85% · Errors≤5%</span>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a3"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A4 Manager ═══ -->
+<div class="view" id="view-a4">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">👔 A4 · Manager Team Performance — Overall Score</div>
+      <span class="panel-sub">Average Overall Score of each manager's team per month</span>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a4"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A5 MoM Delta ═══ -->
+<div class="view" id="view-a5">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">🔄 A5 · MoM Delta Matrix — Latest vs Previous Month</div>
+      <span class="panel-sub">Green = improved · Red = declined · Shows all 8 KPIs per agent</span>
+    </div>
+    <div class="filter-row">
+      <label>Search:</label>
+      <input type="text" id="a5Search" placeholder="agent name…" oninput="renderA5()"/>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a5"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A6 Position ═══ -->
+<div class="view" id="view-a6">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">🏅 A6 · Position Benchmarks — Overall Score</div>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a6"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A7 Top 10 ═══ -->
+<div class="view" id="view-a7">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">🥇 A7 · Top 10 Per Month — Overall Score</div>
+    </div>
+    <div class="tbl-wrap" style="overflow-x:auto"><div id="a7container" style="display:flex;gap:16px;padding:16px;min-width:max-content"></div></div>
+  </div>
+</div>
+
+<!-- ═══ A8 Absence Risk ═══ -->
+<div class="view" id="view-a8">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">⚠️ A8 · Absence Risk Tracker — ABS Rate</div>
+      <span class="panel-sub">Red = ABS &gt; 6% target · counts months at risk per agent</span>
+    </div>
+    <div class="filter-row">
+      <label>Show:</label>
+      <select id="a8Filter" onchange="renderA8()">
+        <option value="all">All Agents</option>
+        <option value="risk">At Risk Only (any month &gt;6%)</option>
+      </select>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a8"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A9 NPS ═══ -->
+<div class="view" id="view-a9">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">⭐ A9 · NPS Score Trend per Agent</div>
+      <span class="panel-sub">Target ≥ 80% · counts months hitting target</span>
+    </div>
+    <div class="filter-row">
+      <label>Search:</label>
+      <input type="text" id="a9Search" placeholder="agent name…" oninput="renderA9()"/>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a9"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A10 Percentile ═══ -->
+<div class="view" id="view-a10">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">📐 A10 · Percentile Ranking — Overall Score</div>
+      <span class="panel-sub">100% = top of team · 0% = bottom of team · per month</span>
+    </div>
+    <div class="filter-row">
+      <label>Search:</label>
+      <input type="text" id="a10Search" placeholder="agent name…" oninput="renderA10()"/>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a10"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A11 Quality vs Errors ═══ -->
+<div class="view" id="view-a11">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">🔍 A11 · Quality vs Errors Dual Scorecard</div>
+      <span class="panel-sub">Side-by-side Quality Score and Error Rate per agent per month</span>
+    </div>
+    <div class="filter-row">
+      <label>Search:</label>
+      <input type="text" id="a11Search" placeholder="agent name…" oninput="renderA11()"/>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a11"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A12 EPH ═══ -->
+<div class="view" id="view-a12">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">⚡ A12 · EPH (Emails Per Hour) Trend</div>
+      <span class="panel-sub">Productivity metric · Target ≥ 5.5</span>
+    </div>
+    <div class="filter-row">
+      <label>Search:</label>
+      <input type="text" id="a12Search" placeholder="agent name…" oninput="renderA12()"/>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a12"></table></div>
+  </div>
+</div>
+
+<!-- ═══ A13 Improvement Leaders ═══ -->
+<div class="view" id="view-a13">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">🚀 A13 · Improvement Leaders — Overall Score Gain</div>
+      <span class="panel-sub">First month → Latest month change · sorted by biggest gain</span>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-a13"></table></div>
+  </div>
+</div>
+
+<!-- ═══ ADD DATA / MANAGE ═══ -->
+<div class="view" id="view-addData">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">➕ Add New Month Data</div>
+      <span class="panel-sub">Select multiple Excel scorecards or paste CSV/TSV data</span>
+    </div>
+    <div class="panel-body" style="padding:24px;display:flex;flex-direction:column;gap:20px">
+      <div id="uploadZone" onclick="document.getElementById('fileInput').click()"
+           ondragover="event.preventDefault();this.classList.add('drag')"
+           ondragleave="this.classList.remove('drag')"
+           ondrop="handleDrop(event)">
+        <div class="uz-icon">📂</div>
+        <h3>Drop Excel scorecard(s) here</h3>
+        <p>Supports uploading multiple .xlsx files at once!</p>
+        <button id="uploadBtn2" class="btn-primary" style="margin-top:8px;">
+          Browse Files
+        </button>
+      </div>
+      <div style="text-align:center;color:var(--muted);font-size:12px;font-weight:600">— OR PASTE DATA —</div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;gap:10px;align-items:center">
+          <label style="font-size:12px;font-weight:600;color:var(--text)">Month label:</label>
+          <input type="text" id="pasteMonth" placeholder="e.g. May-26" style="width:140px"/>
+        </div>
+        <textarea id="pasteArea" rows="8" placeholder="Paste tab-separated or comma-separated data here. First row = headers (Agent_ID, Agent_Name, Manager, Position, Stage, ABS, NPS, Chat_Resolution, First_Response_Avg, EPH, Quality, Errors, Overall_Score)"
+          style="width:100%;background:var(--surface);border:1px solid var(--border);
+          color:var(--text);font-family:var(--font-main);font-size:12px;padding:12px;
+          border-radius:8px;resize:vertical;outline:none"></textarea>
+        <button onclick="importPaste()" class="btn-primary" style="align-self:flex-start; background: var(--green);">
+          Import Pasted Data
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <div class="panel" id="currentDataPanel">
+    <div class="panel-header">
+      <div class="panel-title">📋 Manage Months / Data Summary</div>
+    </div>
+    <div class="tbl-wrap"><table id="tbl-dataSummary"></table></div>
+  </div>
+</div>
+
+</div><!-- end main -->
+<!-- Hidden file input moved from topbar -->
+<input type="file" id="fileInput" accept=".xlsx,.csv" multiple/>
+</div><!-- end app -->
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ══════════════════════════════════════════════════════════
+// DATA
+// ══════════════════════════════════════════════════════════
+
+// Clean starting point - upload your data to fill the application
+let DATA = [];
+
+const KPI_KEYS   = ['ABS','NPS','Chat_Resolution','First_Response_Avg','EPH','Quality','Errors','Overall_Score'];
+const KPI_LABELS = ['ABS','NPS','Chat Res%','1st Resp','EPH','Quality','Errors','Overall'];
+const KPI_LOWER  = new Set(['ABS','First_Response_Avg','Errors']);
+const TARGETS    = {ABS:0.06,NPS:0.80,Chat_Resolution:0.90,EPH:5.5,Quality:0.85,Errors:0.05,Overall_Score:0.85};
+const IS_PCT     = new Set(['ABS','NPS','Chat_Resolution','Quality','Errors','Overall_Score']);
+
+let activeKpi = 'Overall_Score';
+let chartInstance = null; 
+let barChartInstance = null;
+let doughnutChartInstance = null;
+let isDarkMode = false;
+
+Chart.defaults.font.family = "'Inter', sans-serif";
+
+// ── helpers ──────────────────────────────────────────────
+function getChartColors() {
+    const style = getComputedStyle(document.body);
+    return {
+        grid: style.getPropertyValue('--border').trim(),
+        text: style.getPropertyValue('--muted').trim()
+    };
+}
+
+function toggleTheme() {
+    isDarkMode = !isDarkMode;
+    if (isDarkMode) {
+        document.body.classList.add('dark-mode');
+        document.getElementById('themeIcon').textContent = '☀️';
+        document.getElementById('themeToggleBtn').innerHTML = '<span id="themeIcon">☀️</span> <span style="font-size: 11px;">Light Mode</span>';
+    } else {
+        document.body.classList.remove('dark-mode');
+        document.getElementById('themeIcon').textContent = '🌙';
+        document.getElementById('themeToggleBtn').innerHTML = '<span id="themeIcon">🌙</span> <span style="font-size: 11px;">Dark Mode</span>';
+    }
+    // Re-render the overview to update the chart colors properly
+    renderOverview();
+}
+
+function escapeHTML(str) {
+  if (str == null) return '—';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function upsertRecord(newRec) {
+  const existingIdx = DATA.findIndex(r => r.Agent_ID === newRec.Agent_ID && r.Month === newRec.Month);
+  if (existingIdx >= 0) {
+    DATA[existingIdx] = { ...DATA[existingIdx], ...newRec };
+  } else {
+    DATA.push(newRec);
+  }
+}
+
+function months(){
+  const order=['Nov-25','Dec-25','Jan-26','Feb-26','Mar-26','Apr-26','May-26','Jun-26',
+                'Jul-26','Aug-26','Sep-26','Oct-26','Nov-26','Dec-26'];
+  const present=new Set(DATA.map(r=>r.Month));
+  const known=order.filter(m=>present.has(m));
+  
+  const extra=[...present].filter(m=>!order.includes(m)).sort((a, b) => {
+    const dateA = new Date(a.replace('-', ' 1, 20'));
+    const dateB = new Date(b.replace('-', ' 1, 20'));
+    return dateA - dateB;
+  });
+  
+  return [...known,...extra];
+}
+
+function agents(){
+  const m={};
+  DATA.forEach(r=>{
+    if(!m[r.Agent_ID]) m[r.Agent_ID]={id:r.Agent_ID,name:r.Agent_Name,manager:r.Manager,position:r.Position,stage:r.Stage};
+  });
+  return Object.values(m).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+}
+
+function agentVal(agentId, month, kpi){
+  const rows=DATA.filter(r=>r.Agent_ID===agentId && r.Month===month);
+  if(!rows.length) return null;
+  const vals=rows.map(r=>r[kpi]).filter(v=>v!=null);
+  return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+}
+
+function teamAvg(month, kpi){
+  const vals=DATA.filter(r=>r.Month===month).map(r=>r[kpi]).filter(v=>v!=null);
+  return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+}
+
+function fmt(v, kpi){
+  if(v==null) return '<span style="color:var(--muted)">—</span>';
+  if(IS_PCT.has(kpi)) return (v*100).toFixed(1)+'%';
+  return v.toFixed(2);
+}
+
+function trendArrow(curr, prev, kpi){
+  if(curr==null||prev==null) return '<span class="trend-eq">—</span>';
+  const improved = KPI_LOWER.has(kpi) ? curr<prev : curr>prev;
+  const same = Math.abs(curr-prev)<0.0001;
+  if(same) return '<span class="trend-eq">→</span>';
+  return improved ? '<span class="trend-up">▲</span>' : '<span class="trend-dn">▼</span>';
+}
+
+function deltaChip(d, kpi){
+  if(d==null) return '—';
+  const improved = KPI_LOWER.has(kpi) ? d<0 : d>0;
+  const sign = d>0?'+':'';
+  const display = IS_PCT.has(kpi) ? sign+(d*100).toFixed(1)+'%' : sign+d.toFixed(2);
+  return improved
+    ? `<span class="chip chip-green">${display}</span>`
+    : d===0 ? display : `<span class="chip chip-red">${display}</span>`;
+}
+
+function scoreBar(v, kpi){
+  if(v==null) return '';
+  let pct;
+  if(kpi==='EPH') pct=Math.min(v/10,1)*100;
+  else pct=Math.min(Math.abs(v)*100,100);
+  const good = KPI_LOWER.has(kpi) ? v<=TARGETS[kpi] : (TARGETS[kpi]?v>=TARGETS[kpi]:true);
+  const color = good?'var(--green)':'var(--red)';
+  return `<div class="mini-bar-wrap">
+    <span style="min-width:42px; text-align:right; font-weight: 500;">${fmt(v,kpi)}</span>
+    <div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+  </div>`;
+}
+
+function th(txt,cls=''){return `<th class="${cls}">${txt}</th>`}
+
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+// ── nav ──────────────────────────────────────────────────
+function switchView(el){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  el.classList.add('active');
+  const view = el.dataset.view;
+  document.getElementById('view-'+view).classList.add('active');
+  renderView(view);
+}
+
+function renderView(view){
+  const fns={
+    overview:renderOverview, agentTrend:renderAgentTrend, byKpi:renderByKpi,
+    a1:renderA1, a2:renderA2, a3:renderA3, a4:renderA4, a5:renderA5,
+    a6:renderA6, a7:renderA7, a8:renderA8, a9:renderA9, a10:renderA10,
+    a11:renderA11, a12:renderA12, a13:renderA13, addData:renderAddData
+  };
+  fns[view]&&fns[view]();
+}
+
+// ══════════════════════════════════════════════════════════
+// OVERVIEW & CHARTS
+// ══════════════════════════════════════════════════════════
+function renderOverview(){
+  const ms=months(); const ags=agents();
+  const lastM=ms[ms.length-1] || '—';
+  const prevM=ms[ms.length-2];
+  const avg=(m,k)=>teamAvg(m,k);
+  const lastOverall=avg(lastM,'Overall_Score');
+  const prevOverall=prevM?avg(prevM,'Overall_Score'):null;
+  const delta=lastOverall&&prevOverall?lastOverall-prevOverall:null;
+
+  document.getElementById('overviewStats').innerHTML=`
+    <div class="stat-card blue"><div class="sc-label">Total Agents</div><div class="sc-value">${ags.length}</div><div class="sc-sub">across all months</div></div>
+    <div class="stat-card"><div class="sc-label">Months Tracked</div><div class="sc-value">${ms.length}</div><div class="sc-sub">${ms[0] || '—'} → ${lastM}</div></div>
+    <div class="stat-card ${delta>0?'green':delta<0?'red':''}">
+      <div class="sc-label">Team Overall Score (${lastM})</div>
+      <div class="sc-value">${lastOverall?(lastOverall*100).toFixed(1)+'%':'—'}</div>
+      <div class="sc-sub">${delta!=null?(delta>0?'▲ +':'▼ ')+(Math.abs(delta)*100).toFixed(1)+'% vs '+prevM:'First month'}</div>
+    </div>
+    <div class="stat-card amber"><div class="sc-label">Total Records</div><div class="sc-value">${DATA.length}</div><div class="sc-sub">raw data rows</div></div>
+  `;
+  
+  const themeColors = getChartColors();
+  
+  // 1. Main Line Chart
+  const ctx = document.getElementById('overviewChartCanvas');
+  if (ctx) {
+      if (chartInstance) {
+          chartInstance.destroy();
+          chartInstance = null;
+      }
+      const chartData = ms.map(m => {
+          const val = avg(m, 'Overall_Score');
+          return val ? (val * 100).toFixed(1) : null;
+      });
+      chartInstance = new Chart(ctx, {
+          type: 'line',
+          data: {
+              labels: ms,
+              datasets: [{
+                  label: 'Team Avg Overall Score (%)',
+                  data: chartData,
+                  borderColor: '#0381FE',
+                  backgroundColor: 'rgba(3, 129, 254, 0.1)',
+                  borderWidth: 3,
+                  fill: true,
+                  tension: 0.4,
+                  pointBackgroundColor: '#1428A0',
+                  pointBorderColor: '#fff',
+                  pointBorderWidth: 2,
+                  pointRadius: 5,
+                  pointHoverRadius: 7
+              }]
+          },
+          options: {
+              responsive: true, maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: {
+                  x: { grid: { display: false }, ticks: { color: themeColors.text } },
+                  y: { grid: { color: themeColors.grid, borderDash: [5, 5] }, ticks: { color: themeColors.text }, min: 0, max: 100 }
+              }
+          }
+      });
+  }
+
+  // 2. Manager Leaderboard (Bar Chart)
+  const barCtx = document.getElementById('managerBarChart');
+  if (barCtx) {
+      if (barChartInstance) {
+          barChartInstance.destroy();
+          barChartInstance = null; 
+      }
+      
+      const mgrs = [...new Set(DATA.map(r=>r.Manager).filter(Boolean))];
+      const mgrData = mgrs.map(mgr => {
+          const vs = DATA.filter(r=>r.Month===lastM && r.Manager===mgr && r.Overall_Score!=null).map(r=>r.Overall_Score);
+          return {
+              mgr: mgr,
+              score: vs.length ? (vs.reduce((a,b)=>a+b,0)/vs.length)*100 : null
+          }
+      }).filter(d => d.score != null).sort((a,b) => b.score - a.score);
+
+      barChartInstance = new Chart(barCtx, {
+          type: 'bar',
+          data: {
+              labels: mgrData.map(d => d.mgr.split(' ')[0]), 
+              datasets: [{
+                  label: 'Overall Score',
+                  data: mgrData.map(d => d.score.toFixed(1)),
+                  backgroundColor: '#0381FE',
+                  borderRadius: 4
+              }]
+          },
+          options: {
+              responsive: true, maintainAspectRatio: false,
+              plugins: { legend: { display: false } },
+              scales: { 
+                 x: { grid: { display: false }, ticks: { color: themeColors.text } },
+                 y: { grid: { color: themeColors.grid }, ticks: { color: themeColors.text }, min: 0, max: 100 } 
+              }
+          }
+      });
+  }
+
+  // 3. Position Distribution (Doughnut Chart)
+  const doughnutCtx = document.getElementById('positionDoughnutChart');
+  if (doughnutCtx) {
+      if (doughnutChartInstance) {
+          doughnutChartInstance.destroy();
+          doughnutChartInstance = null; 
+      }
+      
+      const posCounts = {};
+      const latestAgents = new Set();
+      DATA.filter(r=>r.Month===lastM).forEach(r => {
+          if (!latestAgents.has(r.Agent_ID)) {
+             posCounts[r.Position || 'Unknown'] = (posCounts[r.Position || 'Unknown'] || 0) + 1;
+             latestAgents.add(r.Agent_ID);
+          }
+      });
+      
+      const labels = Object.keys(posCounts);
+      const data = Object.values(posCounts);
+
+      doughnutChartInstance = new Chart(doughnutCtx, {
+          type: 'doughnut',
+          data: {
+              labels: labels,
+              datasets: [{
+                  data: data,
+                  backgroundColor: ['#0381FE', '#1428A0', '#06b6d4', '#10b981', '#8b5cf6', '#f59e0b', '#cbd5e1'],
+                  borderWidth: 0,
+                  hoverOffset: 4
+              }]
+          },
+          options: {
+              responsive: true, maintainAspectRatio: false,
+              plugins: { 
+                  legend: { position: 'right', labels: { boxWidth: 12, color: themeColors.text } } 
+              },
+              cutout: '65%'
+          }
+      });
+  }
+
+  // overview table
+  const tbl=document.getElementById('tbl-overview');
+  let html=`<thead><tr>${th('KPI','left')}${ms.map(m=>th(m,'month-hdr')).join('')}${th('Best Month','extra-hdr center')}${th('Trend','extra-hdr center')}</tr></thead><tbody>`;
+  KPI_KEYS.forEach((kpi,i)=>{
+    const vals=ms.map(m=>teamAvg(m,kpi));
+    const nonNull=vals.filter(v=>v!=null);
+    let bestM='—';
+    if(nonNull.length){
+      const bestV=KPI_LOWER.has(kpi)?Math.min(...nonNull):Math.max(...nonNull);
+      bestM=ms[vals.indexOf(bestV)];
+    }
+    const last=vals[vals.length-1]; const prev=vals[vals.length-2];
+    html+=`<tr><td class="left" style="font-weight:600">${KPI_LABELS[i]}</td>`;
+    vals.forEach((v,vi)=>{
+      html+=`<td class="month-cell right">${scoreBar(v,kpi)}</td>`;
+    });
+    html+=`<td class="extra-cell center"><span class="chip chip-blue">${bestM}</span></td>`;
+    html+=`<td class="extra-cell center">${trendArrow(last,prev,kpi)}</td></tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+  document.getElementById('monthPill').textContent=`Latest: ${lastM}`;
+  document.getElementById('dataInfo').textContent=`${DATA.length} records · ${ms.length} months · ${ags.length} agents`;
+}
+
+// ══════════════════════════════════════════════════════════
+// AGENT KPI TREND
+// ══════════════════════════════════════════════════════════
+function renderAgentTrend(){
+  const ms=months();
+  const kpi=document.getElementById('filterKpi').value;
+  const search=(document.getElementById('agentSearch').value||'').toLowerCase();
+  
+  const currentMgr = document.getElementById('filterManager').value;
+  const currentPos = document.getElementById('filterPosition').value;
+
+  const allMgrs=[...new Set(DATA.map(r=>r.Manager).filter(Boolean))].sort();
+  const allPos=[...new Set(DATA.map(r=>r.Position).filter(Boolean))].sort();
+  
+  const mgrSel=document.getElementById('filterManager');
+  mgrSel.innerHTML = '<option value="">All</option>'; 
+  allMgrs.forEach(m=>{
+    const o=document.createElement('option');
+    o.value=m; 
+    o.textContent=escapeHTML(m);
+    mgrSel.appendChild(o);
+  });
+  if(allMgrs.includes(currentMgr)) mgrSel.value = currentMgr;
+
+  const posSel=document.getElementById('filterPosition');
+  posSel.innerHTML = '<option value="">All</option>';
+  allPos.forEach(p=>{
+    const o=document.createElement('option');
+    o.value=p;
+    o.textContent=escapeHTML(p);
+    posSel.appendChild(o);
+  });
+  if(allPos.includes(currentPos)) posSel.value = currentPos;
+
+  let ags=agents();
+  const activeMgr = mgrSel.value;
+  const activePos = posSel.value;
+  
+  if(search) ags=ags.filter(a=>(a.name||'').toLowerCase().includes(search)||(a.id+'').includes(search));
+  if(activeMgr) ags=ags.filter(a=>a.manager===activeMgr);
+  if(activePos) ags=ags.filter(a=>a.position===activePos);
+
+  const tbl=document.getElementById('tbl-agentTrend');
+  let html=`<thead><tr>
+    ${th('ID', 'left')}${th('Agent Name','left')}${th('Manager','left')}${th('Position', 'center')}
+    ${ms.map(m=>th(m,'month-hdr center')).join('')}
+    ${th('Trend','extra-hdr center')}${th('MoM Δ','extra-hdr center')}${th('Best','extra-hdr right')}${th('Worst','extra-hdr right')}${th('Avg','extra-hdr right')}
+  </tr></thead><tbody>`;
+
+  ags.forEach(a=>{
+    const vals=ms.map(m=>agentVal(a.id,m,kpi));
+    const nonNull=vals.filter(v=>v!=null);
+    const last=vals[vals.length-1]; const prev=vals.slice(0,-1).reverse().find(v=>v!=null);
+    const best=nonNull.length?Math.max(...nonNull):null;
+    const worst=nonNull.length?Math.min(...nonNull):null;
+    const avg=nonNull.length?nonNull.reduce((acc,b)=>acc+b,0)/nonNull.length:null;
+    const mom=last!=null&&prev!=null?last-prev:null;
+    html+=`<tr>
+      <td class="left" style="color:var(--muted);font-size:10px">${a.id}</td>
+      <td class="left" style="font-weight:600; color:var(--samsung-navy)">${escapeHTML(a.name)}</td>
+      <td class="left" style="color:var(--muted)">${escapeHTML(a.manager)||'—'}</td>
+      <td class="center"><span class="chip chip-blue">${escapeHTML(a.position)||'—'}</span></td>
+      ${vals.map(v=>`<td class="month-cell right">${fmt(v,kpi)}</td>`).join('')}
+      <td class="extra-cell center">${trendArrow(last,prev,kpi)}</td>
+      <td class="extra-cell center">${deltaChip(mom,kpi)}</td>
+      <td class="extra-cell right" style="color:var(--green); font-weight:600;">${fmt(best,kpi)}</td>
+      <td class="extra-cell right" style="color:var(--red); font-weight:600;">${fmt(worst,kpi)}</td>
+      <td class="extra-cell right" style="font-weight:600;">${fmt(avg,kpi)}</td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// BY KPI
+// ══════════════════════════════════════════════════════════
+function initKpiTabs(){
+  const tabs=document.getElementById('kpiTabs');
+  KPI_KEYS.forEach((k,i)=>{
+    const d=document.createElement('div');
+    d.className='kpi-tab'+(k===activeKpi?' active':'');
+    d.textContent=KPI_LABELS[i];
+    d.onclick=()=>{activeKpi=k;document.querySelectorAll('.kpi-tab').forEach(t=>t.classList.remove('active'));d.classList.add('active');renderByKpi()};
+    tabs.appendChild(d);
+  });
+}
+function renderByKpi(){
+  const ms=months();
+  const kpi=activeKpi;
+  const search=(document.getElementById('byKpiSearch').value||'').toLowerCase();
+  const sortBy=document.getElementById('byKpiSort').value;
+  let ags=agents();
+  if(search) ags=ags.filter(a=>(a.name||'').toLowerCase().includes(search));
+
+  ags=ags.map(a=>{
+    const vals=ms.map(m=>agentVal(a.id,m,kpi));
+    const nonNull=vals.filter(v=>v!=null);
+    return {...a,vals,latest:vals[vals.length-1],best:nonNull.length?Math.max(...nonNull):null,worst:nonNull.length?Math.min(...nonNull):null};
+  });
+  if(sortBy==='latest') ags.sort((a,b)=>{if(a.latest==null)return 1;if(b.latest==null)return -1;return KPI_LOWER.has(kpi)?a.latest-b.latest:b.latest-a.latest});
+  else if(sortBy==='name') ags.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  else if(sortBy==='best') ags.sort((a,b)=>KPI_LOWER.has(kpi)?(a.best??999)-(b.best??999):(b.best??-999)-(a.best??-999));
+  else if(sortBy==='worst') ags.sort((a,b)=>KPI_LOWER.has(kpi)?(a.worst??999)-(b.worst??999):(b.worst??-999)-(a.worst??-999));
+
+  const tbl=document.getElementById('tbl-byKpi');
+  let html=`<thead><tr>
+    ${th('#','center')}${th('Agent Name','left')}${th('Manager','left')}${th('Position', 'center')}
+    ${ms.map(m=>th(m,'month-hdr center')).join('')}
+    ${th('Trend','extra-hdr center')}${th('MoM Δ','extra-hdr center')}${th('Best','extra-hdr right')}${th('Worst','extra-hdr right')}
+  </tr></thead><tbody>`;
+  ags.forEach((a,idx)=>{
+    const last=a.vals[a.vals.length-1];
+    const prev=a.vals.slice(0,-1).reverse().find(v=>v!=null);
+    const mom=last!=null&&prev!=null?last-prev:null;
+    const topCls=idx<3?'top3':idx>=ags.length-3?'bot3':'';
+    html+=`<tr class="${topCls}">
+      <td class="center" style="color:var(--muted)">${idx+1}</td>
+      <td class="left" style="font-weight:600; color:var(--samsung-navy)">${escapeHTML(a.name)}</td>
+      <td class="left" style="color:var(--muted)">${escapeHTML(a.manager)||'—'}</td>
+      <td class="center"><span class="chip chip-blue">${escapeHTML(a.position)||'—'}</span></td>
+      ${a.vals.map(v=>`<td class="month-cell right">${scoreBar(v,kpi)}</td>`).join('')}
+      <td class="extra-cell center">${trendArrow(last,prev,kpi)}</td>
+      <td class="extra-cell center">${deltaChip(mom,kpi)}</td>
+      <td class="extra-cell right" style="color:var(--green); font-weight:600;">${fmt(a.best,kpi)}</td>
+      <td class="extra-cell right" style="color:var(--red); font-weight:600;">${fmt(a.worst,kpi)}</td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A1 — TEAM MONTHLY AVGS
+// ══════════════════════════════════════════════════════════
+function renderA1(){
+  const ms=months();
+  const tbl=document.getElementById('tbl-a1');
+  let html=`<thead><tr>${th('KPI','left')}${th('Target', 'right')}${ms.map(m=>th(m,'month-hdr right')).join('')}${th('Best Month','extra-hdr center')}${th('Worst Month','extra-hdr center')}</tr></thead><tbody>`;
+  KPI_KEYS.forEach((kpi,i)=>{
+    const vals=ms.map(m=>teamAvg(m,kpi));
+    const nonNull=vals.filter(v=>v!=null);
+    const tgt=TARGETS[kpi];
+    let bestM='—',worstM='—';
+    if(nonNull.length){
+      const bestV=KPI_LOWER.has(kpi)?Math.min(...nonNull):Math.max(...nonNull);
+      const worstV=KPI_LOWER.has(kpi)?Math.max(...nonNull):Math.min(...nonNull);
+      bestM=ms[vals.indexOf(bestV)]||'—';
+      worstM=ms[vals.indexOf(worstV)]||'—';
+    }
+    html+=`<tr><td class="left" style="font-weight:600">${KPI_LABELS[i]}</td>
+      <td class="right" style="color:var(--muted);">${tgt!=null?fmt(tgt,kpi):'—'}</td>
+      ${vals.map(v=>`<td class="month-cell right">${scoreBar(v,kpi)}</td>`).join('')}
+      <td class="extra-cell center"><span class="chip chip-green">${bestM}</span></td>
+      <td class="extra-cell center"><span class="chip chip-red">${worstM}</span></td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A2 — CONSISTENCY
+// ══════════════════════════════════════════════════════════
+function renderA2(){
+  const ms=months();
+  const search=(document.getElementById('a2Search').value||'').toLowerCase();
+  let ags=agents().filter(a=>!search||(a.name||'').toLowerCase().includes(search));
+  const kpi='Overall_Score';
+  const tbl=document.getElementById('tbl-a2');
+  let html=`<thead><tr>${th('Agent Name','left')}${th('Position', 'center')}${ms.map(m=>th(m,'month-hdr right')).join('')}${th('Avg Score','extra-hdr right')}${th('# ≥ Avg','extra-hdr center')}${th('Active Months','extra-hdr center')}</tr></thead><tbody>`;
+  ags.forEach(a=>{
+    const vals=ms.map(m=>agentVal(a.id,m,kpi));
+    const nonNull=vals.filter(v=>v!=null);
+    const avg=nonNull.length?nonNull.reduce((a,b)=>a+b,0)/nonNull.length:null;
+    const hits=avg!=null?nonNull.filter(v=>v>=avg).length:0;
+    html+=`<tr><td class="left" style="font-weight:600">${escapeHTML(a.name)}</td>
+      <td class="center"><span class="chip chip-blue">${escapeHTML(a.position)||'—'}</span></td>
+      ${vals.map(v=>`<td class="month-cell right">${fmt(v,kpi)}</td>`).join('')}
+      <td class="extra-cell right" style="color:var(--green); font-weight:600;">${fmt(avg,kpi)}</td>
+      <td class="extra-cell center"><span class="chip chip-purple">${hits}/${nonNull.length}</span></td>
+      <td class="extra-cell center">${nonNull.length}</td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A3 — TARGET ACHIEVEMENT
+// ══════════════════════════════════════════════════════════
+function renderA3(){
+  const ms=months();
+  const tbl=document.getElementById('tbl-a3');
+  let html=`<thead><tr>${th('KPI','left')}${th('Target', 'right')}${ms.map(m=>th(m,'month-hdr right')).join('')}</tr></thead><tbody>`;
+  KPI_KEYS.forEach((kpi,i)=>{
+    const tgt=TARGETS[kpi];
+    if(tgt==null) return;
+    html+=`<tr><td class="left" style="font-weight:600">${KPI_LABELS[i]}</td><td class="right" style="color:var(--muted);">${fmt(tgt,kpi)}</td>`;
+    ms.forEach(m=>{
+      const rows=DATA.filter(r=>r.Month===m);
+      const total=rows.length;
+      if(!total){html+=`<td class="month-cell center">—</td>`;return;}
+      const hit=rows.filter(r=>{const v=r[kpi];if(v==null)return false;return KPI_LOWER.has(kpi)?v<=tgt:v>=tgt;}).length;
+      const pct=hit/total;
+      const color=pct>=0.7?'var(--green)':pct>=0.5?'var(--amber)':'var(--red)';
+      html+=`<td class="month-cell right"><div class="mini-bar-wrap">
+        <span style="min-width:36px;color:${color}; font-weight:600;">${(pct*100).toFixed(0)}%</span>
+        <div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${pct*100}%;background:${color}"></div></div>
+      </div></td>`;
+    });
+    html+=`</tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A4 — MANAGER TEAMS
+// ══════════════════════════════════════════════════════════
+function renderA4(){
+  const ms=months();
+  const mgrs=[...new Set(DATA.map(r=>r.Manager).filter(Boolean))].sort();
+  const tbl=document.getElementById('tbl-a4');
+  let html=`<thead><tr>${th('Manager','left')}${th('# Agents', 'center')}${ms.map(m=>th(m,'month-hdr right')).join('')}${th('Trend','extra-hdr center')}</tr></thead><tbody>`;
+  mgrs.forEach(mgr=>{
+    const mgrAgents=[...new Set(DATA.filter(r=>r.Manager===mgr).map(r=>r.Agent_ID))];
+    const vals=ms.map(m=>{
+      const vs=DATA.filter(r=>r.Month===m&&r.Manager===mgr).map(r=>r.Overall_Score).filter(v=>v!=null);
+      return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null;
+    });
+    const last=vals[vals.length-1];const prev=vals.slice(0,-1).reverse().find(v=>v!=null);
+    html+=`<tr><td class="left" style="font-weight:600; color:var(--samsung-navy);">${escapeHTML(mgr)}</td><td class="center">${mgrAgents.length}</td>
+      ${vals.map(v=>`<td class="month-cell right">${scoreBar(v,'Overall_Score')}</td>`).join('')}
+      <td class="extra-cell center">${trendArrow(last,prev,'Overall_Score')}</td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A5 — MoM DELTA MATRIX
+// ══════════════════════════════════════════════════════════
+function renderA5(){
+  const ms=months();
+  const prevM=ms[ms.length-2]; const lastM=ms[ms.length-1];
+  const search=(document.getElementById('a5Search').value||'').toLowerCase();
+  let ags=agents().filter(a=>!search||(a.name||'').toLowerCase().includes(search));
+  const tbl=document.getElementById('tbl-a5');
+  let html=`<thead><tr>${th('Agent Name','left')}${th('Position', 'center')}
+    ${KPI_LABELS.map(l=>th(l,'month-hdr center')).join('')}
+    ${th('KPIs Improved','extra-hdr center')}
+  </tr></thead><tbody>`;
+  ags.forEach(a=>{
+    const deltas=KPI_KEYS.map(kpi=>{
+      const last=agentVal(a.id,lastM,kpi);
+      const prev=agentVal(a.id,prevM,kpi);
+      return last!=null&&prev!=null?last-prev:null;
+    });
+    const improved=deltas.filter((d,i)=>{
+      if(d==null)return false;
+      return KPI_LOWER.has(KPI_KEYS[i])?d<0:d>0;
+    }).length;
+    html+=`<tr><td class="left" style="font-weight:600">${escapeHTML(a.name)}</td>
+      <td class="center"><span class="chip chip-blue">${escapeHTML(a.position)||'—'}</span></td>
+      ${deltas.map((d,i)=>`<td class="month-cell center">${deltaChip(d,KPI_KEYS[i])}</td>`).join('')}
+      <td class="extra-cell center"><span class="chip chip-${improved>=5?'green':improved>=3?'amber':'red'}">${improved}/8</span></td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A6 — POSITION BENCHMARKS
+// ══════════════════════════════════════════════════════════
+function renderA6(){
+  const ms=months();
+  const positions=[...new Set(DATA.map(r=>r.Position).filter(Boolean))].sort();
+  const tbl=document.getElementById('tbl-a6');
+  let html=`<thead><tr>${th('Position','left')}${th('# Agents', 'center')}${ms.map(m=>th(m,'month-hdr right')).join('')}${th('Trend','extra-hdr center')}</tr></thead><tbody>`;
+  positions.forEach(pos=>{
+    const posAgents=[...new Set(DATA.filter(r=>r.Position===pos).map(r=>r.Agent_ID))];
+    const vals=ms.map(m=>{
+      const vs=DATA.filter(r=>r.Month===m&&r.Position===pos).map(r=>r.Overall_Score).filter(v=>v!=null);
+      return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null;
+    });
+    const last=vals[vals.length-1];const prev=vals.slice(0,-1).reverse().find(v=>v!=null);
+    html+=`<tr><td class="left" style="font-weight:600">${escapeHTML(pos)}</td><td class="center">${posAgents.length}</td>
+      ${vals.map(v=>`<td class="month-cell right">${scoreBar(v,'Overall_Score')}</td>`).join('')}
+      <td class="extra-cell center">${trendArrow(last,prev,'Overall_Score')}</td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A7 — TOP 10
+// ══════════════════════════════════════════════════════════
+function renderA7(){
+  const ms=months();
+  const container=document.getElementById('a7container');
+  container.innerHTML='';
+  ms.forEach(m=>{
+    const monthRows=DATA.filter(r=>r.Month===m&&r.Overall_Score!=null);
+    monthRows.sort((a,b)=>b.Overall_Score-a.Overall_Score);
+    const top=monthRows.slice(0,10);
+    const col=document.createElement('div');
+    col.style.cssText='min-width:240px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;box-shadow: 0 1px 3px rgba(0,0,0,0.04);';
+    let html=`<div style="background:var(--surface2);padding:12px 16px;font-family:var(--font-main);font-size:13px;font-weight:800;color:var(--samsung-navy);border-bottom:1px solid var(--border);">${m}</div>`;
+    top.forEach((r,i)=>{
+      const rankCls=i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'rank-n';
+      html+=`<div style="display:flex;align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--border)">
+        <span class="rank ${rankCls}">${i+1}</span>
+        <div style="flex:1;overflow:hidden">
+          <div style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHTML(r.Agent_Name)}</div>
+          <div style="font-size:10px;color:var(--muted)">${escapeHTML(r.Position)||''}</div>
+        </div>
+        <span style="font-size:13px;font-weight:800;color:var(--green)">${(r.Overall_Score*100).toFixed(1)}%</span>
+      </div>`;
+    });
+    col.innerHTML=html;
+    container.appendChild(col);
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+// A8 — ABSENCE RISK
+// ══════════════════════════════════════════════════════════
+function renderA8(){
+  const ms=months();
+  const filter=document.getElementById('a8Filter').value;
+  let ags=agents();
+  const kpi='ABS';
+  const tbl=document.getElementById('tbl-a8');
+  let html=`<thead><tr>${th('Agent Name','left')}${th('Manager','left')}${th('Position', 'center')}
+    ${ms.map(m=>th(m,'month-hdr right')).join('')}
+    ${th('# Risk Months','extra-hdr center')}
+  </tr></thead><tbody>`;
+  ags.forEach(a=>{
+    const vals=ms.map(m=>agentVal(a.id,m,kpi));
+    const riskCount=vals.filter(v=>v!=null&&v>0.06).length;
+    if(filter==='risk'&&riskCount===0) return;
+    html+=`<tr><td class="left" style="font-weight:600">${escapeHTML(a.name)}</td>
+      <td class="left" style="color:var(--muted)">${escapeHTML(a.manager)||'—'}</td>
+      <td class="center"><span class="chip chip-blue">${escapeHTML(a.position)||'—'}</span></td>
+      ${vals.map(v=>{
+        if(v==null) return `<td class="month-cell right">—</td>`;
+        const bad=v>0.06; const warn=v>0.04&&v<=0.06;
+        const cls=bad?'cell-bad':warn?'cell-warn':'cell-good';
+        return `<td class="month-cell right ${cls}" style="font-weight:600;">${(v*100).toFixed(1)}%</td>`;
+      }).join('')}
+      <td class="extra-cell center"><span class="chip chip-${riskCount>2?'red':riskCount>0?'amber':'green'}">${riskCount}</span></td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A9 — NPS TREND
+// ══════════════════════════════════════════════════════════
+function renderA9(){
+  const ms=months();
+  const search=(document.getElementById('a9Search').value||'').toLowerCase();
+  let ags=agents().filter(a=>!search||(a.name||'').toLowerCase().includes(search));
+  const kpi='NPS';
+  const tbl=document.getElementById('tbl-a9');
+  let html=`<thead><tr>${th('Agent Name','left')}${th('Position', 'center')}
+    ${ms.map(m=>th(m,'month-hdr right')).join('')}
+    ${th('Avg NPS','extra-hdr right')}${th('# ≥80%','extra-hdr center')}
+  </tr></thead><tbody>`;
+  ags.forEach(a=>{
+    const vals=ms.map(m=>agentVal(a.id,m,kpi));
+    const nonNull=vals.filter(v=>v!=null);
+    const avg=nonNull.length?nonNull.reduce((s,v)=>s+v,0)/nonNull.length:null;
+    const hits=nonNull.filter(v=>v>=0.8).length;
+    html+=`<tr><td class="left" style="font-weight:600">${escapeHTML(a.name)}</td>
+      <td class="center"><span class="chip chip-blue">${escapeHTML(a.position)||'—'}</span></td>
+      ${vals.map(v=>{
+        if(v==null) return `<td class="month-cell right">—</td>`;
+        const col=v>=0.8?'var(--text-green)':v>=0.6?'var(--text-amber)':'var(--text-red)';
+        return `<td class="month-cell right" style="color:${col}; font-weight:600;">${(v*100).toFixed(1)}%</td>`;
+      }).join('')}
+      <td class="extra-cell right" style="color:var(--green); font-weight:700;">${avg!=null?(avg*100).toFixed(1)+'%':'—'}</td>
+      <td class="extra-cell center"><span class="chip chip-${hits===nonNull.length&&nonNull.length>0?'green':hits>0?'amber':'red'}">${hits}/${nonNull.length}</span></td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A10 — PERCENTILE RANK
+// ══════════════════════════════════════════════════════════
+function renderA10(){
+  const ms=months();
+  const search=(document.getElementById('a10Search').value||'').toLowerCase();
+  let ags=agents().filter(a=>!search||(a.name||'').toLowerCase().includes(search));
+  const kpi='Overall_Score';
+  const tbl=document.getElementById('tbl-a10');
+  
+  const monthScores={};
+  ms.forEach(m=>{
+    monthScores[m]=DATA.filter(r=>r.Month===m&&r[kpi]!=null).map(r=>r[kpi]).sort((a,b)=>a-b);
+  });
+  function percentile(v, arr){
+    if(!arr.length||v==null) return null;
+    const below=arr.filter(x=>x<v).length;
+    return below/(arr.length-1||1);
+  }
+  let html=`<thead><tr>${th('Agent Name','left')}${th('Position', 'center')}
+    ${ms.map(m=>th(m,'month-hdr right')).join('')}
+    ${th('Avg Rank','extra-hdr right')}
+  </tr></thead><tbody>`;
+  ags.forEach(a=>{
+    const vals=ms.map(m=>{
+      const v=agentVal(a.id,m,kpi);
+      return percentile(v,monthScores[m]);
+    });
+    const nonNull=vals.filter(v=>v!=null);
+    const avg=nonNull.length?nonNull.reduce((s,v)=>s+v,0)/nonNull.length:null;
+    html+=`<tr><td class="left" style="font-weight:600">${escapeHTML(a.name)}</td>
+      <td class="center"><span class="chip chip-blue">${escapeHTML(a.position)||'—'}</span></td>
+      ${vals.map(v=>{
+        if(v==null) return `<td class="month-cell right">—</td>`;
+        const col=v>=0.75?'var(--text-green)':v>=0.5?'var(--text-amber)':'var(--text-red)';
+        return `<td class="month-cell right" style="color:${col}; font-weight:600;">${(v*100).toFixed(0)}%</td>`;
+      }).join('')}
+      <td class="extra-cell right" style="font-weight:800">${avg!=null?(avg*100).toFixed(0)+'%':'—'}</td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A11 — QUALITY vs ERRORS
+// ══════════════════════════════════════════════════════════
+function renderA11(){
+  const ms=months();
+  const search=(document.getElementById('a11Search').value||'').toLowerCase();
+  let ags=agents().filter(a=>!search||(a.name||'').toLowerCase().includes(search));
+  const tbl=document.getElementById('tbl-a11');
+  let html=`<thead><tr>${th('Agent Name','left')}${th('Position', 'center')}`;
+  ms.forEach(m=>{html+=`<th class="month-hdr center" colspan="2">${m}</th>`});
+  html+=`</tr><tr><th></th><th></th>`;
+  ms.forEach(()=>{html+=`<th class="right cell-good" style="font-size:10px">Quality</th><th class="right cell-bad" style="font-size:10px">Errors</th>`});
+  html+=`</tr></thead><tbody>`;
+  ags.forEach(a=>{
+    html+=`<tr><td class="left" style="font-weight:600">${escapeHTML(a.name)}</td>
+      <td class="center"><span class="chip chip-blue">${escapeHTML(a.position)||'—'}</span></td>`;
+    ms.forEach(m=>{
+      const q=agentVal(a.id,m,'Quality'); const e=agentVal(a.id,m,'Errors');
+      const qc=q!=null?(q>=0.85?'var(--text-green)':q>=0.7?'var(--text-amber)':'var(--text-red)'):'var(--muted)';
+      const ec=e!=null?(e<=0.05?'var(--text-green)':e<=0.1?'var(--text-amber)':'var(--text-red)'):'var(--muted)';
+      html+=`<td class="right cell-good" style="color:${qc}; font-weight:600;">${q!=null?(q*100).toFixed(1)+'%':'—'}</td>
+             <td class="right cell-bad" style="color:${ec}; font-weight:600;">${e!=null?(e*100).toFixed(1)+'%':'—'}</td>`;
+    });
+    html+=`</tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A12 — EPH TREND
+// ══════════════════════════════════════════════════════════
+function renderA12(){
+  const ms=months();
+  const search=(document.getElementById('a12Search').value||'').toLowerCase();
+  let ags=agents().filter(a=>!search||(a.name||'').toLowerCase().includes(search));
+  const kpi='EPH';
+  const tbl=document.getElementById('tbl-a12');
+  let html=`<thead><tr>${th('Agent Name','left')}${th('Position', 'center')}
+    ${ms.map(m=>th(m,'month-hdr right')).join('')}
+    ${th('Avg EPH','extra-hdr right')}${th('# ≥5.5','extra-hdr center')}
+  </tr></thead><tbody>`;
+  ags.forEach(a=>{
+    const vals=ms.map(m=>agentVal(a.id,m,kpi));
+    const nonNull=vals.filter(v=>v!=null);
+    const avg=nonNull.length?nonNull.reduce((s,v)=>s+v,0)/nonNull.length:null;
+    const hits=nonNull.filter(v=>v>=5.5).length;
+    html+=`<tr><td class="left" style="font-weight:600">${escapeHTML(a.name)}</td>
+      <td class="center"><span class="chip chip-blue">${escapeHTML(a.position)||'—'}</span></td>
+      ${vals.map(v=>{
+        if(v==null) return `<td class="month-cell right">—</td>`;
+        const col=v>=5.5?'var(--text-green)':v>=4?'var(--text-amber)':'var(--text-red)';
+        return `<td class="month-cell right" style="color:${col}; font-weight:600;">${v.toFixed(2)}</td>`;
+      }).join('')}
+      <td class="extra-cell right" style="color:var(--green); font-weight:700;">${avg!=null?avg.toFixed(2):'—'}</td>
+      <td class="extra-cell center"><span class="chip chip-${hits===nonNull.length&&nonNull.length>0?'green':hits>0?'amber':'red'}">${hits}/${nonNull.length}</span></td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// A13 — IMPROVEMENT LEADERS
+// ══════════════════════════════════════════════════════════
+function renderA13(){
+  const ms=months();
+  const kpi='Overall_Score';
+  let ags=agents().map(a=>{
+    const vals=ms.map(m=>agentVal(a.id,m,kpi));
+    const withMonth=ms.map((m,i)=>({m,v:vals[i]})).filter(x=>x.v!=null);
+    if(withMonth.length<2) return null;
+    const first=withMonth[0]; const last=withMonth[withMonth.length-1];
+    const gain=last.v-first.v;
+    let improved=0,total=0;
+    for(let i=1;i<withMonth.length;i++){total++;if(withMonth[i].v>withMonth[i-1].v)improved++;}
+    return {...a,firstM:first.m,firstV:first.v,lastM:last.m,lastV:last.v,gain,pctImproved:total?improved/total:0,activeMonths:withMonth.length};
+  }).filter(Boolean);
+  ags.sort((a,b)=>b.gain-a.gain);
+  const tbl=document.getElementById('tbl-a13');
+  let html=`<thead><tr>
+    ${th('#', 'center')}${th('Agent Name','left')}${th('Manager','left')}${th('Position', 'center')}
+    ${th('First Month', 'center')}${th('First Score', 'right')}${th('Latest Month', 'center')}${th('Latest Score', 'right')}
+    ${th('Net Gain','extra-hdr center')}${th('% Months Improving','extra-hdr center')}${th('Active Months','extra-hdr center')}
+  </tr></thead><tbody>`;
+  ags.forEach((a,i)=>{
+    const gainCls=a.gain>0?'chip-green':a.gain<0?'chip-red':'chip-blue';
+    html+=`<tr>
+      <td class="center" style="color:var(--muted)">${i+1}</td>
+      <td class="left" style="font-weight:600">${escapeHTML(a.name)}</td>
+      <td class="left" style="color:var(--muted)">${escapeHTML(a.manager)||'—'}</td>
+      <td class="center"><span class="chip chip-blue">${escapeHTML(a.position)||'—'}</span></td>
+      <td class="center">${a.firstM}</td><td class="right" style="font-weight:600;">${(a.firstV*100).toFixed(1)}%</td>
+      <td class="center">${a.lastM}</td><td class="right" style="font-weight:600;">${(a.lastV*100).toFixed(1)}%</td>
+      <td class="extra-cell center"><span class="chip ${gainCls}">${a.gain>0?'+':''}${(a.gain*100).toFixed(1)}%</span></td>
+      <td class="extra-cell right"><div class="mini-bar-wrap">
+        <span style="min-width:32px">${(a.pctImproved*100).toFixed(0)}%</span>
+        <div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${a.pctImproved*100}%;background:var(--samsung-blue)"></div></div>
+      </div></td>
+      <td class="extra-cell center">${a.activeMonths}</td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// ADD DATA / MANAGE VIEW
+// ══════════════════════════════════════════════════════════
+function deleteMonth(m) {
+  if (confirm(`Are you absolutely sure you want to delete all data for ${m}? This action cannot be undone.`)) {
+    DATA = DATA.filter(r => r.Month !== m);
+    toast(`✅ Deleted all data for ${m}`);
+    renderAddData();
+    renderOverview();
+  }
+}
+
+function renderAddData(){
+  const ms=months();
+  const tbl=document.getElementById('tbl-dataSummary');
+  let html=`<thead><tr>${th('Month','left')}${th('# Agents', 'center')}${th('# Records', 'center')}${th('Action', 'center')}</tr></thead><tbody>`;
+  ms.forEach(m=>{
+    const recs=DATA.filter(r=>r.Month===m);
+    const uniqueAgents=new Set(recs.map(r=>r.Agent_ID)).size;
+    html+=`<tr>
+      <td class="left"><span class="chip chip-blue">${m}</span></td>
+      <td class="center">${uniqueAgents}</td>
+      <td class="center">${recs.length}</td>
+      <td class="center"><button class="btn-danger" onclick="deleteMonth('${m}')">Delete Month</button></td>
+    </tr>`;
+  });
+  html+=`<tr style="font-weight:800; background: var(--surface2)">
+    <td class="left">TOTAL MEMORY</td>
+    <td class="center">${new Set(DATA.map(r=>r.Agent_ID)).size}</td>
+    <td class="center">${DATA.length}</td>
+    <td class="center">—</td>
+  </tr>`;
+  html+='</tbody>';
+  tbl.innerHTML=html;
+}
+
+// ══════════════════════════════════════════════════════════
+// IMPORT / UPLOAD (MULTIPLE FILES ENABLED)
+// ══════════════════════════════════════════════════════════
+function handleDrop(e){
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('drag');
+  const files=e.dataTransfer.files;
+  if(files && files.length > 0) processMultipleFiles(files);
+}
+
+document.getElementById('fileInput').addEventListener('change',function(){
+  if(this.files && this.files.length > 0) processMultipleFiles(this.files);
+});
+
+async function processMultipleFiles(files) {
+    let totalAdded = 0;
+    
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const added = await processSingleFile(file);
+        totalAdded += added;
+    }
+    
+    toast(`✅ Processed ${totalAdded} records from ${files.length} file(s)!`);
+    // Reset file input so you can select the same file again later if needed
+    document.getElementById('fileInput').value = '';
+    renderAddData();
+    renderView('overview');
+}
+
+function processSingleFile(file){
+  return new Promise((resolve) => {
+    const reader=new FileReader();
+    reader.onload=function(e){
+      const data=new Uint8Array(e.target.result);
+      const wb=XLSX.read(data,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const json=XLSX.utils.sheet_to_json(ws,{header:1});
+      if(!json.length){ resolve(0); return; }
+      
+      let hdrRow=-1; let headers=[];
+      for(let i=0;i<Math.min(10,json.length);i++){
+        const row=json[i].map(c=>String(c||'').trim());
+        if(row.some(c=>c.toLowerCase().includes('agent_id')||c.toLowerCase().includes('agent id'))){
+          hdrRow=i; headers=row; break;
+        }
+      }
+      if(hdrRow===-1){ resolve(0); return; }
+      
+      const colMap={};
+      const fieldAliases={
+        Agent_ID:['agent_id','agent id'],
+        Agent_Name:['agent_name','agent name','name'],
+        Manager:['manager'],
+        Position:['position'],
+        Stage:['stage'],
+        Month:['month'],
+        ABS:['abs'],
+        NPS:['nps'],
+        Chat_Resolution:['chat_resolution','chat resolution','chat res'],
+        First_Response_Avg:['first_response_avg','first response avg','first response','1st resp'],
+        EPH:['eph'],
+        Quality:['quality'],
+        Errors:['errors'],
+        Overall_Score:['overall_score','overall score','overall'],
+      };
+      Object.entries(fieldAliases).forEach(([field,aliases])=>{
+        headers.forEach((h,i)=>{if(aliases.includes(h.toLowerCase()))colMap[field]=i;});
+      });
+      
+      const month=document.getElementById('pasteMonth').value.trim() || (()=>{
+        const fn=file.name.toLowerCase();
+        const mNames={jan:'Jan',feb:'Feb',mar:'Mar',apr:'Apr',may:'May',jun:'Jun',
+                      jul:'Jul',aug:'Aug',sep:'Sep',oct:'Oct',nov:'Nov',dec:'Dec'};
+        let year = '26'; // Default
+        const yearMatch = fn.match(/20(\d{2})/);
+        if (yearMatch) {
+            year = yearMatch[1]; 
+        } else if (fn.includes('25')) {
+            year = '25';
+        } else if (fn.includes('24')) {
+            year = '24';
+        }
+
+        for(const[k,v] of Object.entries(mNames)){
+          if(fn.includes(k)) return v + '-' + year; 
+        }
+        return 'New Month';
+      })();
+      
+      let added=0;
+      for(let i=hdrRow+1;i<json.length;i++){
+        const row=json[i];
+        const agentId=colMap.Agent_ID!=null?row[colMap.Agent_ID]:null;
+        if(!agentId) continue;
+        const rec={
+          Agent_ID:parseInt(agentId)||agentId,
+          Agent_Name:colMap.Agent_Name!=null?String(row[colMap.Agent_Name]||''):'',
+          Manager:colMap.Manager!=null?String(row[colMap.Manager]||''):'',
+          Position:colMap.Position!=null?String(row[colMap.Position]||''):'',
+          Stage:colMap.Stage!=null?String(row[colMap.Stage]||''):'',
+          Month:colMap.Month!=null?String(row[colMap.Month]||''):month,
+          ABS:toNum(colMap.ABS!=null?row[colMap.ABS]:null),
+          NPS:toNum(colMap.NPS!=null?row[colMap.NPS]:null),
+          Chat_Resolution:toNum(colMap.Chat_Resolution!=null?row[colMap.Chat_Resolution]:null),
+          First_Response_Avg:toNum(colMap.First_Response_Avg!=null?row[colMap.First_Response_Avg]:null),
+          EPH:toNum(colMap.EPH!=null?row[colMap.EPH]:null),
+          Quality:toNum(colMap.Quality!=null?row[colMap.Quality]:null),
+          Errors:toNum(colMap.Errors!=null?row[colMap.Errors]:null),
+          Overall_Score:toNum(colMap.Overall_Score!=null?row[colMap.Overall_Score]:null),
+        };
+        upsertRecord(rec); 
+        added++;
+      }
+      resolve(added);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function importPaste(){
+  const raw=document.getElementById('pasteArea').value.trim();
+  const month=document.getElementById('pasteMonth').value.trim();
+  if(!raw){toast('❌ No data pasted');return;}
+  if(!month){toast('❌ Enter a month label (e.g. May-26)');return;}
+  const lines=raw.split('\n').map(l=>l.trim()).filter(Boolean);
+  const sep=lines[0].includes('\t')?'\t':',';
+  const headers=lines[0].split(sep).map(h=>h.trim().replace(/^"|"$/g,'').toLowerCase());
+  const idx={};
+  ['agent_id','agent_name','manager','position','stage','abs','nps','chat_resolution',
+   'first_response_avg','eph','quality','errors','overall_score'].forEach(k=>{
+    idx[k]=headers.indexOf(k);
+  });
+  let added=0;
+  for(let i=1;i<lines.length;i++){
+    const cols=lines[i].split(sep).map(c=>c.trim().replace(/^"|"$/g,''));
+    const agentId=idx.agent_id>=0?cols[idx.agent_id]:null;
+    if(!agentId) continue;
+    
+    const rec={
+      Agent_ID:parseInt(agentId)||agentId,
+      Agent_Name:idx.agent_name>=0?cols[idx.agent_name]:'',
+      Manager:idx.manager>=0?cols[idx.manager]:'',
+      Position:idx.position>=0?cols[idx.position]:'',
+      Stage:idx.stage>=0?cols[idx.stage]:'',
+      Month:month,
+      ABS:toNum(idx.abs>=0?cols[idx.abs]:null),
+      NPS:toNum(idx.nps>=0?cols[idx.nps]:null),
+      Chat_Resolution:toNum(idx.chat_resolution>=0?cols[idx.chat_resolution]:null),
+      First_Response_Avg:toNum(idx.first_response_avg>=0?cols[idx.first_response_avg]:null),
+      EPH:toNum(idx.eph>=0?cols[idx.eph]:null),
+      Quality:toNum(idx.quality>=0?cols[idx.quality]:null),
+      Errors:toNum(idx.errors>=0?cols[idx.errors]:null),
+      Overall_Score:toNum(idx.overall_score>=0?cols[idx.overall_score]:null),
+    };
+    upsertRecord(rec); 
+    added++;
+  }
+  toast(`✅ Processed ${added} records for ${month} — all tabs updated!`);
+  document.getElementById('pasteArea').value='';
+  renderAddData();
+  renderView('overview');
+}
+
+function toNum(v){
+  if(v==null || v==='' || v===undefined) return null;
+  const strVal = String(v).trim();
+  const isPercent = strVal.endsWith('%');
+  
+  const n = parseFloat(strVal.replace('%',''));
+  if(isNaN(n)) return null;
+  
+  return isPercent ? (n / 100) : n;
+}
+
+// ══════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════
+initKpiTabs();
+renderOverview();
+</script>
+</body>
+</html>
