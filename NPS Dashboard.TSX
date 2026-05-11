@@ -1,12 +1,59 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
+// ─── Constants ──────────────────────────────────────────────────────────────
+const NPS_THRESHOLD_PROMOTER = 9;
+const NPS_THRESHOLD_PASSIVE = 7;
+const NPS_EXCELLENT = 50;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_ROWS = 100000;
+const VALID_MIME_TYPES = [
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/xlsx',
+  'application/xls'
+];
+const EXCEL_MAGIC_NUMBERS = [
+  [0x50, 0x4B, 0x03, 0x04], // ZIP-based XLSX
+  [0xD0, 0xCF, 0x11, 0xE0]  // OLE-based XLS
+];
+
+// ─── Security utilities ──────────────────────────────────────────────────────
+const sanitizeString = (str) => String(str || "")
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;")
+  .replace(/'/g, "&#x27;");
+
+const isSafePrototypeKey = (key) => {
+  const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
+  return !dangerousKeys.includes(String(key));
+};
+
+const validateFileMagicNumber = (arrayBuffer) => {
+  const dataView = new DataView(arrayBuffer);
+  const bytes = new Uint8Array(arrayBuffer.slice(0, 4));
+  
+  for (const magic of EXCEL_MAGIC_NUMBERS) {
+    let matches = true;
+    for (let i = 0; i < magic.length; i++) {
+      if (bytes[i] !== magic[i]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
+};
+
 
 // ─── NPS helpers ──────────────────────────────────────────────────────────────
 const npsCategory = (score) => {
   const n = Number(score);
   if (isNaN(n)) return null;
-  if (n >= 9) return "Promoter";
-  if (n >= 7) return "Passive";
+  if (n >= NPS_THRESHOLD_PROMOTER) return "Promoter";
+  if (n >= NPS_THRESHOLD_PASSIVE) return "Passive";
   return "Detractor";
 };
 const calcNPS = (rows) => {
@@ -18,13 +65,13 @@ const calcNPS = (rows) => {
 };
 const npsColor = (score) => {
   if (score === null || score === undefined) return "#64748b";
-  if (score >= 50) return "#10b981";
+  if (score >= NPS_EXCELLENT) return "#10b981";
   if (score >= 0) return "#f59e0b";
   return "#ef4444";
 };
 const npsLabel = (score) => {
   if (score === null || score === undefined) return "—";
-  if (score >= 50) return "Excellent";
+  if (score >= NPS_EXCELLENT) return "Excellent";
   if (score >= 0) return "Needs Work";
   return "Critical";
 };
@@ -53,6 +100,7 @@ function parseExpressReport(arrayBuffer) {
   const idxReasonScore = getCol("Reason for Score");
   const seenTxn = new Set();
   const rows = [];
+  let invalidDateCount = 0;
   for (let i = headerIdx + 1; i < raw.length; i++) {
     const row = raw[i];
     if (!row || row.every((c) => c === null)) continue;
@@ -63,9 +111,19 @@ function parseExpressReport(arrayBuffer) {
     seenTxn.add(txnId);
     const dateRaw = row[idxDate];
     let dateObj = null;
-    if (dateRaw instanceof Date) dateObj = dateRaw;
-    else if (typeof dateRaw === "string" || typeof dateRaw === "number")
+    if (dateRaw instanceof Date) {
+      if (!isNaN(dateRaw.getTime())) {
+        dateObj = dateRaw;
+      } else {
+        invalidDateCount++;
+      }
+    } else if (typeof dateRaw === "string" || typeof dateRaw === "number") {
       dateObj = new Date(dateRaw);
+      if (isNaN(dateObj.getTime())) {
+        invalidDateCount++;
+        dateObj = null;
+      }
+    }
     const monthKey = dateObj
       ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(
           2,
@@ -110,6 +168,9 @@ function parseExpressReport(arrayBuffer) {
       reasonScore: String(row[idxReasonScore] || "").trim() || null,
     });
   }
+  if (invalidDateCount > 0) {
+    console.warn(`Warning: ${invalidDateCount} rows had invalid dates and were marked as "Unknown"`);
+  }
   return rows;
 }
 
@@ -130,7 +191,8 @@ function parseAgentsFile(arrayBuffer) {
   const idxLOB = headers.findIndex((h) => h === "LOB");
   const idxWave = headers.findIndex((h) => h === "Wave");
   const idxTL = headers.findIndex((h) => h.includes("1st Line Manager"));
-  const map = {};
+  // Use Object.create(null) to prevent prototype pollution
+  const map = Object.create(null);
   for (let i = headerIdx + 1; i < raw.length; i++) {
     const row = raw[i];
     if (!row) continue;
@@ -138,6 +200,13 @@ function parseAgentsFile(arrayBuffer) {
       .trim()
       .replace(/\.0$/, "");
     if (!bp || bp === "-" || bp === "null") continue;
+    
+    // Validate key to prevent prototype pollution
+    if (!isSafePrototypeKey(bp)) {
+      console.warn(`Skipping potentially dangerous key: ${bp}`);
+      continue;
+    }
+    
     map[bp] = {
       name: String(row[idxName] || "").trim() || null,
       lob: String(row[idxLOB] || "").trim() || null,
@@ -287,23 +356,17 @@ function AgentTooltip({ agent, onClose, theme }) {
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
+  }, []); // Removed onClose dependency to prevent memory leak
 
   const dsatRows = agent.rows.filter((r) => r.npsCategory === "Detractor");
   const passiveRows = agent.rows.filter((r) => r.npsCategory === "Passive");
 
   const formatForCopy = (rows, label) => {
     if (!rows.length) return `No ${label}s`;
-    const header = `Agent: ${agent.name || agent.empId} | ${label}s (${
-      rows.length
-    })\n${"─".repeat(50)}`;
+    const header = `Agent: ${sanitizeString(agent.name || agent.empId)} | ${label}s (${rows.length})\n${"─".repeat(50)}`;
     const lines = rows.map(
       (r, i) =>
-        `${i + 1}. TXN: ${r.txnId} | Score: ${r.ltr} | Date: ${
-          r.dayLabel
-        } | Country: ${r.country}${
-          r.reasonScore ? ` | Reason: ${r.reasonScore}` : ""
-        }`
+        `${i + 1}. TXN: ${sanitizeString(r.txnId)} | Score: ${r.ltr} | Date: ${sanitizeString(r.dayLabel)} | Country: ${sanitizeString(r.country)}${r.reasonScore ? ` | Reason: ${sanitizeString(r.reasonScore)}` : ""}`
     );
     return [header, ...lines].join("\n");
   };
@@ -320,9 +383,14 @@ function AgentTooltip({ agent, onClose, theme }) {
         // fallback
         const ta = document.createElement("textarea");
         ta.value = text;
+        ta.setAttribute("aria-hidden", "true");
         document.body.appendChild(ta);
         ta.select();
-        document.execCommand("copy");
+        try {
+          document.execCommand("copy");
+        } catch (err) {
+          console.error("Failed to copy text", err);
+        }
         document.body.removeChild(ta);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
@@ -334,6 +402,8 @@ function AgentTooltip({ agent, onClose, theme }) {
   return (
     <div
       ref={ref}
+      role="dialog"
+      aria-label={`Agent details for ${agent.name || agent.empId}`}
       style={{
         position: "absolute",
         zIndex: 9999,
@@ -383,6 +453,7 @@ function AgentTooltip({ agent, onClose, theme }) {
             <NPSPill score={nps} />
             <button
               onClick={onClose}
+              aria-label="Close tooltip"
               style={{
                 background: "none",
                 border: "none",
@@ -855,7 +926,8 @@ export default function App() {
   const unmatchedCount = filtered.filter((r) => !r.matched && r.empId).length;
 
   const agentTable = useMemo(() => {
-    const map = {};
+    // Use Object.create(null) to prevent prototype pollution
+  const map = Object.create(null);
     filtered.forEach((r) => {
       const key = r.empId || "unknown";
       if (!map[key])
@@ -890,7 +962,8 @@ export default function App() {
   }, [filtered]);
 
   const agentMonthTable = useMemo(() => {
-    const map = {};
+    // Use Object.create(null) to prevent prototype pollution
+  const map = Object.create(null);
     enriched.forEach((r) => {
       if (activeTeam !== "ALL" && r.tl !== activeTeam) return;
       if (activeLOB !== "ALL" && r.lob !== activeLOB) return;
@@ -930,7 +1003,8 @@ export default function App() {
   }, [agentTable, sortKey, sortDir, search]);
 
   const countryTable = useMemo(() => {
-    const map = {};
+    // Use Object.create(null) to prevent prototype pollution
+  const map = Object.create(null);
     filtered.forEach((r) => {
       if (!map[r.country]) map[r.country] = [];
       map[r.country].push(r);
@@ -948,7 +1022,8 @@ export default function App() {
   }, [filtered]);
 
   const lobTable = useMemo(() => {
-    const map = {};
+    // Use Object.create(null) to prevent prototype pollution
+  const map = Object.create(null);
     filtered.forEach((r) => {
       const k = r.lob || "Unassigned";
       if (!map[k]) map[k] = [];
@@ -973,7 +1048,8 @@ export default function App() {
       if (activeTeam !== "ALL" && r.tl !== activeTeam) return false;
       return true;
     });
-    const map = {};
+    // Use Object.create(null) to prevent prototype pollution
+  const map = Object.create(null);
     base.forEach((r) => {
       if (!map[r.monthKey])
         map[r.monthKey] = { key: r.monthKey, label: r.monthLabel, rows: [] };
