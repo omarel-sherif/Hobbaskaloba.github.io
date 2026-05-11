@@ -1,13 +1,6 @@
  <!DOCTYPE html>
 <html lang="en">
 <head>
-      <script>
-        var password = "1234";
-        var user = prompt("Enter password:");
-        if (user !== password) {
-            document.write("Access denied");
-        }
-    </script>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Samsung Agent KPI Tracker</title>
@@ -685,6 +678,51 @@ tr.bot3 td{background:var(--bg-red)}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 // ══════════════════════════════════════════════════════════
+// SECURITY CONSTANTS & HELPERS
+// ══════════════════════════════════════════════════════════
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_ROWS = 100000;
+const VALID_MIME_TYPES = [
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel',
+    'application/vnd.oasis.opendocument.spreadsheet'
+];
+const EXCEL_MAGIC_NUMBERS = [
+    [0x50, 0x4B, 0x03, 0x04], // ZIP (XLSX)
+    [0x50, 0x4B],             // ZIP alternative
+    [0xD0, 0xCF, 0x11, 0xE0]  // OLE (XLS)
+];
+
+function validateFileMagicNumber(data) {
+    for (const magic of EXCEL_MAGIC_NUMBERS) {
+        let match = true;
+        for (let i = 0; i < magic.length; i++) {
+            if (data[i] !== magic[i]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+function isSafePrototypeKey(key) {
+    const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
+    return !dangerousKeys.includes(String(key));
+}
+
+function sanitizeString(str) {
+    return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#x27;");
+}
+
+// ══════════════════════════════════════════════════════════
 // DATA
 // ══════════════════════════════════════════════════════════
 
@@ -694,7 +732,7 @@ let NPS_DATA = []; // Holds Medallia Express Reports Data
 let SEEN_NPS_TXNS = new Set(); // Prevent duplicates across uploads
 
 // This holds dynamic agent updates from the 'Agents Distribution' sheet
-let GLOBAL_AGENT_MAP = {};
+let GLOBAL_AGENT_MAP = Object.create(null);
 let currentModalEmpId = null;
 
 const KPI_KEYS   = ['ABS','NPS','Chat_Resolution','First_Response_Avg','EPH','Quality','Errors','Overall_Score'];
@@ -1769,10 +1807,11 @@ function copyNpsCurrent(type, agentName) {
         toast(`❌ No ${type}s to copy!`);
         return;
     }
-    let txt = `Agent: ${agentName} | ${type}s (${rows.length})\n--------------------------------------------------\n`;
+    // Sanitize all user-controlled data before including in clipboard text
+    let txt = `Agent: ${sanitizeString(agentName)} | ${type}s (${rows.length})\n--------------------------------------------------\n`;
     rows.forEach((r, i) => {
-        txt += `${i+1}. TXN: ${r.txnId} | Score: ${r.ltr} | Date: ${r.dayLabel}\n`;
-        if(r.reasonScore) txt += `   Reason: ${r.reasonScore}\n`;
+        txt += `${i+1}. TXN: ${sanitizeString(r.txnId)} | Score: ${r.ltr} | Date: ${sanitizeString(r.dayLabel)}\n`;
+        if(r.reasonScore) txt += `   Reason: ${sanitizeString(r.reasonScore)}\n`;
     });
     
     navigator.clipboard.writeText(txt).then(() => {
@@ -1781,6 +1820,7 @@ function copyNpsCurrent(type, agentName) {
         // fallback
         const ta = document.createElement("textarea");
         ta.value = txt;
+        ta.setAttribute("aria-hidden", "true");
         document.body.appendChild(ta);
         ta.select();
         document.execCommand("copy");
@@ -1868,16 +1908,24 @@ async function processMultipleFiles(files) {
     let totalAdded = 0;
     let totalUpdated = 0;
     let totalNps = 0;
+    let errors = [];
     
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const result = await processSingleFile(file);
-        totalAdded += result.added;
-        totalUpdated += result.updated;
-        totalNps += result.npsAdded;
+        try {
+            const result = await processSingleFile(file);
+            totalAdded += result.added;
+            totalUpdated += result.updated;
+            totalNps += result.npsAdded;
+        } catch (err) {
+            errors.push(`${file.name}: ${err.message}`);
+            console.error(`Error processing ${file.name}:`, err);
+        }
     }
     
-    if (totalNps > 0) {
+    if (errors.length > 0) {
+        toast(`⚠️ ${errors.length} file(s) failed: ${errors.slice(0, 2).join('; ')}${errors.length > 2 ? '...' : ''}`);
+    } else if (totalNps > 0) {
         toast(`✅ Loaded ${totalNps} new Express NPS surveys!`);
     } else if (totalAdded > 0 && totalUpdated > 0) {
         toast(`✅ Added ${totalAdded} records & updated ${totalUpdated} agent profiles!`);
@@ -1898,10 +1946,30 @@ async function processMultipleFiles(files) {
 }
 
 function processSingleFile(file){
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    // File size validation
+    if (file.size > MAX_FILE_SIZE) {
+        reject(new Error(`File "${file.name}" exceeds 10MB limit`));
+        return;
+    }
+    
+    // MIME type validation (soft check - still allow if extension is correct but MIME is missing)
+    if (file.type && !VALID_MIME_TYPES.includes(file.type) && file.type !== '') {
+        // Allow empty MIME type as some browsers don't set it correctly
+        console.warn(`Warning: Unusual MIME type for ${file.name}: ${file.type}`);
+    }
+    
     const reader=new FileReader();
+    reader.onerror = () => reject(new Error(`Failed to read file ${file.name}`));
     reader.onload=function(e){
       const data=new Uint8Array(e.target.result);
+      
+      // Magic number validation
+      if (!validateFileMagicNumber(data)) {
+          reject(new Error(`File "${file.name}" does not appear to be a valid Excel file`));
+          return;
+      }
+      
       const wb=XLSX.read(data,{type:'array'});
       
       let added = 0;
@@ -1986,14 +2054,14 @@ function processSingleFile(file){
                   }
 
                   NPS_DATA.push({
-                      txnId,
+                      txnId: sanitizeString(txnId),
                       ltr,
                       npsCategory,
-                      dayLabel,
+                      dayLabel: sanitizeString(dayLabel),
                       monthKey,
-                      country: idxCountry >= 0 ? String(row[idxCountry] || "").trim() || "Unknown" : "Unknown",
-                      empId,
-                      reasonScore: idxReasonScore >= 0 ? String(row[idxReasonScore]||'').trim() : ''
+                      country: idxCountry >= 0 ? sanitizeString(String(row[idxCountry] || "").trim()) || "Unknown" : "Unknown",
+                      empId: sanitizeString(empId),
+                      reasonScore: idxReasonScore >= 0 ? sanitizeString(String(row[idxReasonScore]||'').trim()) : ''
                   });
                   npsAdded++;
               }
@@ -2027,11 +2095,16 @@ function processSingleFile(file){
                       }
                       
                       if(aMgr || aPos || aName || statusIdx >= 0) {
-                          if (!GLOBAL_AGENT_MAP[aId]) GLOBAL_AGENT_MAP[aId] = {};
+                          // Prototype pollution prevention
+                          if (!isSafePrototypeKey(aId)) {
+                              console.warn(`Skipping unsafe agent ID: ${aId}`);
+                              continue;
+                          }
+                          if (!GLOBAL_AGENT_MAP[aId]) GLOBAL_AGENT_MAP[aId] = Object.create(null);
                           
-                          if (aName && aName !== '-') GLOBAL_AGENT_MAP[aId].name = aName;
-                          if (aMgr && aMgr !== '-') GLOBAL_AGENT_MAP[aId].manager = aMgr;
-                          if (aPos && aPos !== '-') GLOBAL_AGENT_MAP[aId].position = aPos;
+                          if (aName && aName !== '-') GLOBAL_AGENT_MAP[aId].name = sanitizeString(aName);
+                          if (aMgr && aMgr !== '-') GLOBAL_AGENT_MAP[aId].manager = sanitizeString(aMgr);
+                          if (aPos && aPos !== '-') GLOBAL_AGENT_MAP[aId].position = sanitizeString(aPos);
                           
                           if (statusIdx >= 0) {
                               GLOBAL_AGENT_MAP[aId].isActive = isActive;
@@ -2186,12 +2259,13 @@ function importPaste(){
           }
 
           NPS_DATA.push({
-              txnId,
+              txnId: sanitizeString(txnId),
               ltr,
               npsCategory,
-              dayLabel,
-              empId,
-              reasonScore: idxReasonScore >= 0 ? cols[idxReasonScore] : ''
+              dayLabel: sanitizeString(dayLabel),
+              empId: sanitizeString(empId),
+              reasonScore: idxReasonScore >= 0 ? sanitizeString(cols[idxReasonScore]) : '',
+              country: idxCountry >= 0 ? sanitizeString(cols[idxCountry]) || 'Unknown' : 'Unknown'
           });
           npsAdded++;
       }
@@ -2218,10 +2292,15 @@ function importPaste(){
                   isActive = (s === 'active' || s === 'yes' || s === 'true' || s === '1');
               }
               
-              if (!GLOBAL_AGENT_MAP[aId]) GLOBAL_AGENT_MAP[aId] = {};
-              if (aName && aName !== '-') GLOBAL_AGENT_MAP[aId].name = aName;
-              if (aMgr && aMgr !== '-') GLOBAL_AGENT_MAP[aId].manager = aMgr;
-              if (aPos && aPos !== '-') GLOBAL_AGENT_MAP[aId].position = aPos;
+              // Prototype pollution prevention
+              if (!isSafePrototypeKey(aId)) {
+                  console.warn(`Skipping unsafe agent ID: ${aId}`);
+                  continue;
+              }
+              if (!GLOBAL_AGENT_MAP[aId]) GLOBAL_AGENT_MAP[aId] = Object.create(null);
+              if (aName && aName !== '-') GLOBAL_AGENT_MAP[aId].name = sanitizeString(aName);
+              if (aMgr && aMgr !== '-') GLOBAL_AGENT_MAP[aId].manager = sanitizeString(aMgr);
+              if (aPos && aPos !== '-') GLOBAL_AGENT_MAP[aId].position = sanitizeString(aPos);
               if (statusIdx >= 0) {
                   GLOBAL_AGENT_MAP[aId].isActive = isActive;
               } else if (GLOBAL_AGENT_MAP[aId].isActive === undefined) {
